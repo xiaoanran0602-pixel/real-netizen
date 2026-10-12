@@ -1,0 +1,62 @@
+// Lin 界面文案（只做中文）。网页只用这里的文案。
+export const copy = {
+  appName: "真实网友",
+  defaultName: "林澈",
+  defaultUserName: "我",
+  tabs: { chats: "消息", moments: "朋友圈", me: "我" },
+  inputPlaceholder: "发消息…",
+  send: "发送",
+  typing: "对方正在输入…",
+  firstHello: "你们已经是好友了，打个招呼吧",
+  sendFailed: "消息未送达，点击重发",
+  notDelivered: "消息未送达",
+  recalled: "你撤回了一条消息",
+  recall: "撤回",
+  copyText: "复制",
+  deleteText: "删除",
+  copied: "已复制",
+  connecting: "正在连接…",
+  disconnected: "连接断开，正在重连…",
+  bootFailed: "连不上本地服务",
+  unauthorized: "需要访问令牌：请从带 ?token= 的链接打开一次",
+  retry: "重试",
+  back: "返回",
+  settings: "设置",
+  save: "保存",
+  saved: "已保存",
+  cancel: "取消",
+  delete: "删除",
+  add: "新增",
+  confirmDelete: "确定删除这条？",
+  noModel: "还没连上她。去「我 → 设置 → 模型」看一下",
+  loadMore: "查看更早的消息",
+  settingsGroups: {
+    her: "她",
+    moments: "她的动态",
+    channels: "聊天渠道",
+    life: "她的日子",
+    memories: "她记得的事",
+    archive: "回档",
+    you: "你",
+    chat: "聊天",
+    model: "模型",
+    look: "外观",
+    phone: "在手机上打开",
+    data: "数据",
+    advanced: "高级",
+  },
+};
+
+export const MEMORY_TYPE_LABELS = {
+  profile: "他的底色",
+  preference: "他的脾气和喜好",
+  recent: "他的近况",
+  thread: "没聊完的话题",
+  event: "你们聊过的",
+  self: "她自己",
+  self_daily: "她这几天",
+};
+
+export const MEMORY_TYPE_ORDER = ["recent", "thread", "event", "profile", "preference", "self", "self_daily"];
+
+export const CLARITY_LABELS = { clear: "清晰", blurry: "模糊", sunk: "沉底" };

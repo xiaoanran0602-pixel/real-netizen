@@ -1,0 +1,9 @@
+{
+  "name": "真实网友",
+  "short_name": "真实网友",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ededed",
+  "theme_color": "#7c6fb0",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

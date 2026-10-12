@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 讨论区（先聊一聊）
+    url: https://github.com/xiaoanran0602-pixel/real-netizen/discussions
+    about: 使用问题、想法、招募贡献者，都欢迎先在 Discussions 里聊。
+  - name: 安全漏洞（请私下报告）
+    url: https://github.com/xiaoanran0602-pixel/real-netizen/security/advisories/new
+    about: 不要开公开 Issue。通过 Security Advisories 私下报告安全问题。

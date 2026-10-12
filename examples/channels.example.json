@@ -1,0 +1,13 @@
+{
+  "telegram": {
+    "enabled": false,
+    "botToken": "123456:ABC-DEF...",
+    "ownerChatId": "你的 Telegram Chat ID"
+  },
+  "webhook": {
+    "enabled": false,
+    "secret": "和中转服务约定的长随机串",
+    "outboundUrl": "https://你的中转服务/incoming",
+    "ownerId": "你在中转服务里的 id"
+  }
+}

@@ -1,0 +1,54 @@
+name: Bug 报告
+description: 某处行为不对、报错或崩溃
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请确认：
+        - 你使用的是 [最新 Release](https://github.com/xiaoanran0602-pixel/real-netizen/releases)；
+        - `node --test test/` 在你的电脑上能跑通（或说明不能）；
+        - 问题没有夹带 `data/` 里的真实数据或密钥。
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 你看到了什么现象？期望又是什么？
+      placeholder: 例如：启动后网页打不开，终端报错 EADDRINUSE。
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 尽量给出能稳定复现的步骤。
+      placeholder: |
+        1. 启动参数：node src/main.js --port 3030
+        2. 打开 http://127.0.0.1:3030
+        3. 点击……
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 截图
+      description: 请粘贴 `data/logs/server.log` 末尾相关行（去掉密钥/令牌）。也可以拖拽截图。
+      render: shell
+  - type: input
+    id: node
+    attributes:
+      label: Node.js 版本
+      placeholder: "22.x / 24.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true

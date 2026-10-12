@@ -1,0 +1,26 @@
+{
+  "name": "real-netizen",
+  "version": "0.1.0",
+  "description": "真实网友（Real Netizen）：一个只属于你的 AI 网友，住在本地网页里，记得你、有她自己的生活。零第三方运行依赖。",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "xiaoanran0602-pixel",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiaoanran0602-pixel/real-netizen.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xiaoanran0602-pixel/real-netizen/issues"
+  },
+  "homepage": "https://github.com/xiaoanran0602-pixel/real-netizen#readme",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/",
+    "check": "node --check src/main.js && node --test test/"
+  }
+}

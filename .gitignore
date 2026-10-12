@@ -1,0 +1,16 @@
+# Runtime data (contains private conversations, memories, secrets)
+data/*
+!data/.gitkeep
+
+# Logs
+*.log
+
+# Dependencies (this project has zero runtime dependencies, but keep clean)
+node_modules/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+
+# Archives / exports
+*.zip

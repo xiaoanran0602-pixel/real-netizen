@@ -1,0 +1,50 @@
+name: 新渠道提案
+description: 提议把真实网友接到一个新的聊天平台
+title: "[Channel]: "
+labels: ["channel"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        在动手之前，先用这个模板对齐想法。实现步骤见 [CONTRIBUTING.md](../../CONTRIBUTING.md) 和 [docs/zh/channels.md](../../docs/zh/channels.md) 第 5 节。
+        先确认官方 API 是否支持 **长轮询**（无需公网）或 **Webhook 回调**（需要公网/中转）。
+  - type: input
+    id: platform
+    attributes:
+      label: 平台名称
+      placeholder: QQ / 微信 / 飞书 / Discord / LINE / Slack / 其他
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: 通信方式
+      options:
+        - 长轮询（如 Telegram getUpdates，无需公网）
+        - Webhook 回调（需要公网地址或中转服务）
+        - 还不确定
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: 官方 API 入口
+      description: 该平台的机器人 API 文档链接、鉴权方式、收发消息接口。
+      placeholder: |
+        - 文档：
+        - 鉴权：
+        - 收消息：
+        - 发消息：
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: 实现思路（可选）
+      description: 如果你想自己写，简单说说目录、start/sendText、owner 字段怎么设计。
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: 我能参与
+      options:
+        - label: 我愿意提交 PR 实现这个渠道（maintainer 会 review）
