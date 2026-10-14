@@ -21,6 +21,7 @@ const OWNER = "10086";
 async function startFakeTelegram() {
   const sent = [];
   const updates = [];
+  const timers = new Set();
   const server = createServer((req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
     let raw = "";
@@ -35,8 +36,15 @@ async function startFakeTelegram() {
       if (url.pathname.includes("getUpdates")) {
         const batch = updates.splice(0);
         // 空响应慢一点，避免长轮询在测试里空转打满 CPU。
-        if (batch.length === 0) setTimeout(() => res.end(JSON.stringify({ ok: true, result: [] })), 5);
-        else res.end(JSON.stringify({ ok: true, result: batch }));
+        if (batch.length === 0) {
+          const timer = setTimeout(() => {
+            timers.delete(timer);
+            res.end(JSON.stringify({ ok: true, result: [] }));
+          }, 5);
+          timers.add(timer);
+        } else {
+          res.end(JSON.stringify({ ok: true, result: batch }));
+        }
         return;
       }
       res.end(JSON.stringify({ ok: true, result: {} }));
@@ -44,7 +52,15 @@ async function startFakeTelegram() {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
-  return { sent, updates, base, close: () => new Promise((resolve) => server.close(resolve)) };
+  const close = () =>
+    new Promise((resolve) => {
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+      // 销毁 keep-alive / 在途连接，server.close 才会立刻回调，测试进程不会卡在退出上。
+      server.closeAllConnections?.();
+      server.close(() => resolve());
+    });
+  return { sent, updates, base, close };
 }
 
 function telegramUpdate(id, text, sender = OWNER) {
@@ -221,6 +237,7 @@ test("Webhook 出站：POST outboundUrl 并带上签名", async () => {
     assert.ok(posted[0].headers["x-rn-signature"]);
     assert.ok(verifyWebhook({ secret: "s3cret", rawBody: JSON.stringify(posted[0].body), signature: posted[0].headers["x-rn-signature"], timestamp: posted[0].headers["x-rn-timestamp"] }));
   } finally {
+    server.closeAllConnections?.();
     await new Promise((resolve) => server.close(resolve));
     await data.cleanup();
   }
