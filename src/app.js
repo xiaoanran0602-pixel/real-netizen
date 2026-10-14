@@ -3,8 +3,8 @@
 //
 //   chat-service（唯一对话写入者）
 //     ├─ 提示词：companion/context.js（记忆 recall + 内心状态 + 两条基石）
-//     ├─ 每轮他说话 → inner 想念下降；每轮结束 → 记忆整理 + 动态唤醒
-//   记忆整理 → 强度表 + 事件判断（自我感觉、张力、被看见的转折）
+//     ├─ 每轮结束 → 记忆整理 + 念头抽取 + 动态唤醒
+//   内核（唯一状态写入者）← 心跳、聊天评价、记忆整理事件（自我感觉、张力、被看见的转折）、掷骰、写书转折
 //   日程生成前 → 掷骰 + 写书转折事实
 //   聊天渠道 bridge ← reply-timing（不秒回）；动态调度器 → 主动找他
 //   日结时钟 → 整理 → 存档；回档器（暂停以上全部）
@@ -30,8 +30,7 @@ import { createMomentsScheduler } from "./moments/scheduler.js";
 import { syncProfileAfterRestore } from "./moments/execute.js";
 import { readProfile } from "./moments/store.js";
 import { currentInner } from "./inner/state.js";
-import { settleNow } from "./inner/store.js";
-import { lifeFacts, onCuratorEvents, onUserTurn } from "./inner/hooks.js";
+import { createInnerHooks } from "./inner/hooks.js";
 import { createPlaceholderGenerator, createReplyTiming } from "./inner/reply-timing.js";
 import { createKernel } from "./inner/kernel.js";
 import { createHeartbeat, loadTimeline } from "./inner/heartbeat.js";
@@ -56,23 +55,24 @@ export async function createApp(options) {
   const localOnly = options.host === "127.0.0.1" || options.host === "localhost" || options.host === "::1";
   const token = localOnly ? await readAccessToken() : await ensureAccessToken();
   const model = options.complete ?? complete;
-  const innerState = (now) => currentInner(now);
-  // 14：常驻的身体内核（权威状态在内存，事件日志 + 检查点）与 5 秒心跳。
+  // 14 + 合并引擎：常驻的内核（唯一状态写入者，事件日志 + 检查点）与 5 秒心跳。
   const kernel = createKernel({ loadTimeline });
   const heartbeat = createHeartbeat({ kernel });
+  const innerState = (now) => currentInner(now, { kernel });
+  const innerHooks = createInnerHooks({ kernel });
   // 13：念头池的后台部分（小时推进、聊天后抽取、溢出出口、时间承诺）。
   const thoughts = createThoughtsRuntime({ kernel, classifier: options.classifier, extractor: options.extractor });
   const mediaLibrary = createMediaRuntime({ complete: model });
 
   let moments = null;
-  const curator = createMemoryCurator({ hooks: strengthHooks({ onEvents: (events, at) => onCuratorEvents(events, at), onMediaRequests: (requests, text, context) => mediaLibrary.recommend(requests, text, context) }) });
+  const curator = createMemoryCurator({ hooks: strengthHooks({ onEvents: (events, at, meta) => innerHooks.onCuratorEvents(events, at, meta), onMediaRequests: (requests, text, context) => mediaLibrary.recommend(requests, text, context) }) });
   const chatService = createChatService({
     complete: model,
-    buildPrompt: createPromptBuilder({ innerProvider: createInnerProvider({ kernel, classifier: options.classifier }), mediaProvider: mediaLibrary.context }),
+    // 测试注入了假的聊天模型时，决策模型也不走网络（除非一并注入）。
+    buildPrompt: createPromptBuilder({ innerProvider: createInnerProvider({ kernel, classifier: options.classifier, decide: options.decide ?? (options.complete ? null : undefined) }), mediaProvider: mediaLibrary.context }),
     ensureLife,
     broadcast,
     readSettings,
-    onUserMessage: onUserTurn,
     afterTurn: ({ source, reply }) => {
       // 渠道的回复要等 reply-timing 真正发出才写进对话，整理放到 bridge 的 onReplied 里，否则会漏掉她那句。
       if (source === "channel") return;
@@ -92,7 +92,7 @@ export async function createApp(options) {
     },
   });
   moments = createMomentsScheduler({ bridge, innerState, thoughts });
-  setLifeFactsProvider(async (now) => [...(await lifeFacts(now)), ...(await thoughts.lifeFacts(now)), ...(await mediaLibrary.lifeFacts())]);
+  setLifeFactsProvider(async (now) => [...(await innerHooks.lifeFacts(now)), ...(await thoughts.lifeFacts(now)), ...(await mediaLibrary.lifeFacts())]);
 
   let restoring = false;
   const clock = createDailyClock({
@@ -103,8 +103,6 @@ export async function createApp(options) {
       return snapshot(day, { boundaryHour: current.dayBoundaryHour, companionName: current.companionName, userName: current.userName });
     },
     isRestoring: () => restoring,
-    // 心跳顺带结算内心状态（惰性结算，心跳只是让它更及时）。
-    onBeat: (now) => settleNow(now.getTime()).then(() => undefined),
   });
   const restorer = createRestorer({
     chatService,

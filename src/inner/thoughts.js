@@ -199,6 +199,8 @@ export function applyExtract(input, result, nowMs = Date.now()) {
     // 闭合不等于忘掉：改衰减曲线、掉一截强度，之后按时间退去（docs/14 第 3.3 节）。
     thought.decay = "fade";
     thought.strength = clamp(thought.strength - 40);
+    // 标记已闭合：想念只算「还没回音」的念头（merge-inner-engines design §5）。不影响涨落。
+    thought.closed = true;
     delete thought.candidate;
     delete thought.affect;
     closedIds.push(id);
@@ -238,7 +240,7 @@ export function worthRemembering(evicted) {
 /**
  * 进提示词的挑选（docs/13 第 3 节 + docs/14 第 9.2 节）：
  * 说得出、且被这条消息碰到的念头进「正在想」，受注意预算限制；背景至多 1 条。
- * 说不出口的（speakable=false）一律不进「正在想」，只单独列出以影响语气（docs/13 第 3 节）。
+ * 说不出口的（speakable=false）一律不进「正在想」，只单独列出（docs/13 第 3 节）。
  */
 export function selectForPrompt(groups, options = {}) {
   const budget = Math.max(1, Math.min(4, options.activeBudget ?? 2));
@@ -252,24 +254,19 @@ export function selectForPrompt(groups, options = {}) {
   return { activated, background, avoided: groups.avoided.slice(0, 2), unspoken };
 }
 
-/** 提示词注入块（docs/13 第 3 节，当前日程不作为内容，见第 9.4 节）。 */
+/** 提示词注入块（docs/13 第 3 节，当前日程不作为内容，见第 9.4 节）。只列事实，不附对她的说明。 */
 export function formatThoughtsSection(selection) {
   const lines = [];
-  const block = (title, items, note) => {
+  const block = (title, items) => {
     if (items.length === 0) return;
-    lines.push(`${title}：`, ...items.map((thought) => `- ${thought.content}`), ...(note ? [note] : []));
+    lines.push(`${title}：`, ...items.map((thought) => `- ${thought.content}`));
   };
-  block("正在想（和他这条消息有关）", selection.activated);
-  block("同时占着心的（和他说的无关，但这会儿就在那）", selection.background);
-  block("她不会说出来的（影响她的语气，但不出现在话里）", selection.unspoken);
-  block("她会绕开的（他刚碰到了这个，她换话题）", selection.avoided);
+  block("和他这条消息有关的", selection.activated);
+  block("和他说的无关，这会儿也在心上的", selection.background);
+  block("她不会说出来的", selection.unspoken);
+  block("他刚碰到、她想绕开的", selection.avoided);
   if (lines.length === 0) return null;
-  return [
-    "# 她此刻脑子里的事",
-    "（这些念头不是待答清单，也不是消息顺序，可以一个也不说。它们影响你怎么听他这句话；相关不等于必须提起，背景念头不要求另开话题，不可说的仍只影响语气。）",
-    ...lines,
-    "（手头的事可以影响注意力和回复节奏，不必交代或在结尾补报；他问起、话题自然碰到或确实被打断时再说。）",
-  ].join("\n");
+  return ["她心里在转的事：", ...lines].join("\n");
 }
 
 /** 空池/未接入时的版本号，让身体内核知道没有念头输入（docs/14 第 3.3 节）。 */

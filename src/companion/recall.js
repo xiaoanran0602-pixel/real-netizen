@@ -22,6 +22,31 @@ const RELEVANCE_WEIGHT = 0.3;
 const SELF_DAILY_KEEP_DAYS = 3;
 // 只调节细节展开，不凭这些词召回无关记忆；仍须通过相关性门槛。
 const DETAIL_REQUEST = /[?？]|记得|记不记得|具体|细节|多少|哪[个里年天次家]|什么时候|怎么[去来做]|what|when|where|remember/iu;
+// 起床、天冷、刚吃饭不自动授权健康/行程巡问。专题档案仍存盘，只是本轮不展示。
+const ROUTINE_TOPICS = {
+  commute: /公交|地铁|通勤|骑车|骑自行车|班车|怎么去公司|怎么回家/u,
+  health: /身体|健康|头.{0,3}[疼痛]|感冒|生病|布洛芬|吃药|发烧|发热|咳嗽|嗓子|疼痛|伤口|晒伤|掉皮|复查|肝功能|医院|看病/u,
+};
+const ELLIPTIC_ANSWER = /^(好多了|好点了|好些了|已经好了|好了|不疼了|还疼|还没好|没好|还没|已经到了|到了|坐公交|坐地铁|还是公交|没有|没有了|是的|嗯)[，,。！!\s]*$/u;
+function routineTopic(entry) {
+  if (["self", "self_daily", "preference"].includes(entry.type)) return null;
+  const subject = entry.description || String(entry.body ?? "").split(/[。\n]/u)[0];
+  // “感冒所以坐公交”这条的主题是通勤，不能由“头不疼了”串出坐车问题。
+  return Object.keys(ROUTINE_TOPICS).find((key) => ROUTINE_TOPICS[key].test(subject)) ?? null;
+}
+function routineCue(topic, text, previousAssistantText) {
+  if (!topic) return null;
+  const clauses = String(text ?? "").split(/[，,。；;\n]/u);
+  const refusal = /(?:别|不要|不用|不想)(?:再|一直|老是)?(?:问|聊|管|提)|不聊这个/u;
+  const allowed = clauses.filter((part) => !refusal.test(part)).join(" ");
+  if (ROUTINE_TOPICS[topic].test(allowed)) return allowed;
+  if (clauses.some((part) => refusal.test(part))) return null;
+  // 仅当本轮确实是短回答，且上一条最后一个问句属于该主题，才承接。
+  if (!ELLIPTIC_ANSWER.test(String(text ?? "").trim())) return null;
+  const questions = String(previousAssistantText ?? "").match(/[^。！？!?\n]+[？?]|[^。！？!?\n]+(?:吗|没)[。]?$/gu) ?? [];
+  const last = questions.at(-1) ?? "";
+  return ROUTINE_TOPICS[topic].test(last) ? last : null;
+}
 /**
  * 每层配额（字）。底色层（关于他、喜好、她自己）排前面，先拿预算。
  * 修复：迁移演练发现「关于他」只有 9 条就已约 1900 字，1500 的硬配额把他身体、钱、近况几条挤掉了，
@@ -81,8 +106,12 @@ export function selectMemories(input) {
   for (const entry of annotated) {
     const layer = layerOf(entry, today);
     if (!layer) continue;
+    const topic = routineTopic(entry);
+    const cue = routineCue(topic, input.recentText ?? "", input.previousAssistantText);
+    if (topic && !cue) continue;
     if (layer === "myRecent" && !withinDays(entry.created ?? entry.updated, today, SELF_DAILY_KEEP_DAYS)) continue;
-    const relevance = query.size > 0 ? relevanceScore(entry, query) : 0;
+    const relevance = topic && cue ? relevanceScore(entry, tokenize(cue.replace(/头(?:还|不|有点|很|又|也|一直)*疼/gu, "头疼"))) : query.size > 0 ? relevanceScore(entry, query) : 0;
+    if (topic && relevance < RELATED_MIN_SCORE) continue;
     const related = relevance >= RELATED_MIN_SCORE;
     // 底色常驻但只给轮廓；近况、未完话题和往事不再无条件挤进每一轮。
     if (!FOUNDATION_LAYERS.has(layer) && !entry.record.pinned && !related) continue;

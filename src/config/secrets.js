@@ -7,6 +7,11 @@ import { randomBytes } from "node:crypto";
 import { paths } from "./paths.js";
 import { readCached, readJson, readText, writeJsonAtomic, writeTextAtomic } from "../store/files.js";
 
+/**
+ * 决策模型（可选的结构化判断端点）：判断聊天状态与回应需求。
+ * 默认关闭（空串）；谁需要谁在设置里填一个兼容 /v1/systemone 的端点，不通时自动退回启发式。
+ */
+export const DEFAULT_DECISION_MODEL = "";
 export const MODEL_PROTOCOLS = Object.freeze(["anthropic", "openai"]);
 const FIELD_MAX_CHARS = 300;
 const KEY_TAIL_CHARS = 4;
@@ -15,7 +20,7 @@ const TOKEN_BYTES = 24;
 // ---------------- 模型 ----------------
 
 /**
- * @typedef {{protocol: "anthropic"|"openai", baseUrl: string, apiKey: string, chatModel: string, backgroundModel: string}} ModelSecrets
+ * @typedef {{protocol: "anthropic"|"openai", baseUrl: string, apiKey: string, chatModel: string, backgroundModel: string, decisionModel: string}} ModelSecrets
  */
 
 /** @returns {ModelSecrets} */
@@ -28,6 +33,8 @@ export function normalizeModelSecrets(raw) {
     apiKey: str("apiKey"),
     chatModel: str("chatModel"),
     backgroundModel: str("backgroundModel"),
+    // 决策模型：留空 = 不用（启发式兜底），不阻塞回复。
+    decisionModel: str("decisionModel") || DEFAULT_DECISION_MODEL,
   };
 }
 
@@ -47,13 +54,14 @@ export function maskModelSecrets(secrets) {
     baseUrl: secrets.baseUrl,
     chatModel: secrets.chatModel,
     backgroundModel: secrets.backgroundModel,
+    decisionModel: secrets.decisionModel,
     hasApiKey: Boolean(secrets.apiKey),
     apiKeyTail: secrets.apiKey ? secrets.apiKey.slice(-KEY_TAIL_CHARS) : "",
   };
 }
 
 /**
- * 合并保存。apiKey 留空不改；backgroundModel 允许清空（清空 = 后台用聊天模型）。
+ * 合并保存。apiKey 留空不改；backgroundModel 允许清空（清空 = 后台用聊天模型）；decisionModel 允许清空（清空 = 不用决策模型）。
  * @returns {{secrets?: ModelSecrets, rejected: string[]}}
  */
 export function mergeModelPatch(current, patch) {
@@ -64,7 +72,7 @@ export function mergeModelPatch(current, patch) {
     if (MODEL_PROTOCOLS.includes(input.protocol)) next.protocol = input.protocol;
     else rejected.push("protocol");
   }
-  for (const key of ["baseUrl", "chatModel", "backgroundModel", "apiKey"]) {
+  for (const key of ["baseUrl", "chatModel", "backgroundModel", "decisionModel", "apiKey"]) {
     const value = input[key];
     if (value === undefined) continue;
     if (typeof value !== "string" || value.length > FIELD_MAX_CHARS) {

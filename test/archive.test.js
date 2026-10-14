@@ -33,7 +33,7 @@ async function day(service, n, text) {
   clock = new Date(2026, 9, n, 20, 1);
   await service.sendUserMessage(text, { source: "web", at: new Date(2026, 9, n, 20).getTime() });
   await writeFile(join(paths.memory(), `day${n}.md`), memory(`第${n}天记住的`));
-  await writeFile(paths.profile(), JSON.stringify({ signature: { text: `签名${n}` }, history: [] }));
+  await writeFile(paths.momentsProfile(), JSON.stringify({ signature: { text: `签名${n}` }, history: [] }));
   await writeFile(paths.inner(), JSON.stringify({ vitals: { energy: n * 10 } }));
   return snapshot(`2026-10-0${n}`, deps);
 }
@@ -75,7 +75,7 @@ test("restore makes files equal the manifest, deletes extras, keeps settings/per
     const messages = await readConversation(await getMainConversationId());
     assert.deepEqual(messages.map((m) => m.text), ["第一天", "回：第一天"]);
     assert.deepEqual((await readdir(paths.memory())).filter((n) => n.endsWith(".md")), ["day1.md"]);
-    assert.equal(JSON.parse(await readFile(paths.profile(), "utf8")).signature.text, "签名1");
+    assert.equal(JSON.parse(await readFile(paths.momentsProfile(), "utf8")).signature.text, "签名1");
     assert.equal(JSON.parse(await readFile(paths.inner(), "utf8")).vitals.energy, 10);
     assert.equal(await readFile(paths.persona(), "utf8"), "人设 v2");
     assert.equal(await readFile(paths.core(), "utf8"), "基石 v1");

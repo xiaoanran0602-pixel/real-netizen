@@ -1,18 +1,20 @@
 // ============================================================
-// 内心状态 → 提示词与行为的接线（给 companion/context.js 与聊天渠道、动态调度器用）。
-//   current(now)        结算到现在，返回 {inner, slot, mapped, condition}
-//   promptProvider      context.js 的 innerProvider：「# 你现在的状态」小节 + 段数上限
+// 内心状态的读取接线（给 reply-timing、动态调度器、调试接口用）。
+//   currentSlot(now)               现在的日程时段（读日程文件）
+//   currentInner(now, {kernel})    内核快照 + express → {inner, slot, slots, condition, mapped, status, snapshot}
+//     inner 是兼容视图：{vitals: {energy, stress(=张力), missing, fullness, selfWorth}, tensions, lastTurning}
+//     mapped 是 express 的结果（delayFactor、proactive、hints、maxSegments、guard……）
+// 提示词接线（每轮聊天）在 provider.js；这里只读、不写任何状态。
 // ============================================================
 
 import { join } from "node:path";
 import { paths } from "../config/paths.js";
+import { readSettings } from "../config/settings.js";
 import { readText } from "../store/files.js";
 import { formatLocalDate } from "../util/time.js";
-import { describeSlot, formatStateSection, isSafetyRisk, mapInner } from "./mapping.js";
-import { mutateInner, readInner, settleNow } from "./store.js";
-import { willHints } from "./will.js";
+import { express } from "./express.js";
+import { describeSlot } from "./mapping.js";
 import { daySlots, slotAt } from "./tags.js";
-import { activeCondition } from "./vitals.js";
 
 /** 现在的日程时段。 */
 export async function currentSlot(now) {
@@ -24,27 +26,28 @@ export async function currentSlot(now) {
 }
 
 /**
- * @param {Date} now
- * @param {{settle?: boolean, safety?: boolean}} [options]
+ * 快照 + 表达 → 兼容视图（旧调用方读 inner.vitals.* 的地方不用改）。内核不可用时为 null。
+ * @param {any} snapshot
+ * @param {any} expressed
  */
-export async function currentInner(now, options = {}) {
-  const inner = options.settle === false ? await readInner() : await settleNow(now.getTime());
-  const { slot, slots } = await currentSlot(now);
-  const condition = activeCondition(inner, formatLocalDate(now));
-  const mapped = mapInner(inner, { now: now.getTime(), condition, safety: options.safety });
-  return { inner, slot, slots, condition, mapped, status: describeSlot(slot) };
+export function compatView(snapshot, expressed) {
+  if (!snapshot?.values || expressed?.degraded) return null;
+  const psyche = snapshot.psyche ?? {};
+  return {
+    vitals: { energy: snapshot.values.energy, stress: snapshot.values.tension, missing: expressed.derived.missing, fullness: expressed.derived.fullness, selfWorth: psyche.selfWorth },
+    tensions: { book: psyche.book, seen: psyche.seen },
+    lastTurning: psyche.lastTurning ?? {},
+  };
 }
 
-/** context.js 的 innerProvider。防线很薄时并入意志的提示（基石碎片 / 漏一句）。 */
-export async function innerPromptProvider({ now, messages }) {
-  const lastUser = [...messages].reverse().find((message) => message.role === "user");
-  const safety = isSafetyRisk(lastUser?.text);
-  const { inner, mapped } = await currentInner(now, { safety });
-  const will = willHints(inner, mapped.guard, now, safety);
-  if (will.leakOffered) {
-    // 记下“这一轮允许过漏一句”，聊完的事件判断里 coveredWithJoke 才算数（will.afterEvents）。
-    await mutateInner((state) => ({ state: { ...state, leakOfferedAt: now.getTime() }, reason: { kind: "leak_offered" } }));
-  }
-  const text = formatStateSection({ ...mapped, hints: [...mapped.hints, ...will.hints] });
-  return { text, maxSegments: mapped.maxSegments ?? undefined, safety };
+/**
+ * @param {Date} now
+ * @param {{kernel?: {snapshot: Function} | null, safety?: boolean}} [options]
+ */
+export async function currentInner(now, options = {}) {
+  const nowMs = now.getTime();
+  const [settings, { slot, slots }] = await Promise.all([readSettings(), currentSlot(now)]);
+  const snapshot = options.kernel ? options.kernel.snapshot(nowMs) : { status: "unavailable", values: null };
+  const mapped = express(snapshot, { safety: options.safety, now: nowMs, sickMissCap: settings.sickMissCap });
+  return { inner: compatView(snapshot, mapped), slot, slots, condition: mapped.condition, mapped, status: describeSlot(slot), snapshot };
 }

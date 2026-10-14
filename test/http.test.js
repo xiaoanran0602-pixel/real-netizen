@@ -15,7 +15,6 @@ import { addDays, formatLocalDate } from "../src/util/time.js";
 import { useTempData } from "./helpers.js";
 
 const TOKEN = "test-token-123";
-const OWNER = "10086";
 
 async function startApp() {
   const data = await useTempData();
@@ -89,24 +88,32 @@ test("记牢、清晰度字段、回档列表与日期确认、删除更早存�
   }
 });
 
-test("inner/force：压力与疲惫让防线变薄并出现提示；张力强制后到阈值；未知事件 400；任何接口都不含她自己的基石", async () => {
+test("inner/force：压力与疲惫让防线变薄并出现提示；张力强制后到阈值；未知事件 400；合并视图没有 mode；任何接口都不含她自己的基石", async () => {
   const ctx = await startApp();
   try {
+    await ctx.app.kernel.start();
     const before = (await ctx.call("GET", "/api/lin/inner")).json;
-    assert.ok(before.vitals && before.tensions && typeof before.guard === "number");
+    assert.ok(before.values && before.psyche && before.derived && typeof before.derived.guard === "number" && typeof before.heartRate === "number");
+    assert.equal("mode" in before, false);
+    assert.ok(before.situation.text && ["glance", "half", "full"].includes(before.situation.attention), "调试视图里有她此刻的处境");
+    assert.equal(before.conversation, null, "还没聊过：这会儿没在聊");
+    assert.equal("mode" in (await ctx.call("GET", "/api/lin/body")).json, false);
     await ctx.call("POST", "/api/lin/inner/force", { event: "stress" });
     await ctx.call("POST", "/api/lin/inner/force", { event: "tired" });
     // 测试改不了系统时间：用喝酒（−15）代替深夜修正（−15）。
     const forced = (await ctx.call("POST", "/api/lin/inner/force", { event: "drink" })).json;
-    assert.ok(forced.guard < 35, `guard=${forced.guard}`);
-    assert.ok(forced.hints.includes("你防线很薄，心里的东西容易漏出来。"));
+    assert.ok(forced.derived.guard < 35, `guard=${forced.derived.guard}`);
+    assert.ok(forced.hints.includes("今晚防线很薄，心里的东西容易漏出来。"));
     const book = (await ctx.call("POST", "/api/lin/inner/force", { event: "tension:book" })).json;
-    assert.ok(book.tensions.book >= 80);
+    assert.ok(book.psyche.book >= 80);
     const sick = (await ctx.call("POST", "/api/lin/inner/force", { event: "sick" })).json;
     assert.equal(sick.sick.kind, "cold");
+    assert.equal((await ctx.call("POST", "/api/lin/inner/force", { event: "healthy" })).json.sick, null);
     assert.equal((await ctx.call("POST", "/api/lin/inner/force", { event: "nope" })).status, 400);
+    const log = (await ctx.call("GET", "/api/lin/inner")).json.log;
+    assert.ok(log.some((row) => row.kind === "force") && log.some((row) => row.kind === "condition_set"), "强制事件写进内核日志");
     const simulated = (await ctx.call("POST", "/api/lin/inner/simulate?hours=48&memory=1")).json;
-    assert.ok(simulated.vitals && simulated.memory);
+    assert.ok(simulated.values && simulated.psyche && simulated.derived && simulated.memory);
     assert.equal((await ctx.call("GET", "/api/lin/status")).status, 200);
 
     const fragment = coreSelfText().trim().slice(0, 24);
@@ -130,11 +137,12 @@ test("令牌：无令牌 401；?token= 写 HttpOnly cookie 后凭 cookie 通过�
     assert.equal((await ctx.call("GET", "/api/lin/settings", undefined, { cookie: cookie.split(";")[0] })).status, 200);
     assert.equal((await fetch(`${ctx.base}/css/lin.css`)).status, 200);
 
-    await writeChannelSecrets({ webhook: { enabled: true, secret: "tok", outboundUrl: "http://127.0.0.1/hook", ownerId: OWNER } });
-    const plain = JSON.stringify({ eventId: "e1", senderId: OWNER, text: "在吗" });
+    await writeChannelSecrets({ webhook: { secret: "tok", ownerId: "me", enabled: true } });
+    const plain = JSON.stringify({ eventId: "e1", senderId: "me", text: "在吗" });
     const bad = await fetch(`${ctx.base}/api/lin/channels/webhook`, { method: "POST", body: plain, headers: { "x-rn-timestamp": String(Date.now()), "x-rn-signature": "bad" } });
     assert.equal(bad.status, 401);
-    const good = await fetch(`${ctx.base}/api/lin/channels/webhook`, { method: "POST", body: plain, headers: { "x-rn-timestamp": String(Date.now()), "x-rn-signature": signPayload("tok", plain) } });
+    const signature = signPayload("tok", plain);
+    const good = await fetch(`${ctx.base}/api/lin/channels/webhook`, { method: "POST", body: plain, headers: { "x-rn-timestamp": String(Date.now()), "x-rn-signature": signature } });
     assert.equal(good.status, 200);
   } finally {
     await ctx.stop();
@@ -153,10 +161,10 @@ test("设置非法字段整体 400；模型与渠道打码、密钥留空不改"
     assert.equal(kept.json.hasApiKey, true);
     assert.equal(kept.json.apiKeyTail, "9876");
     assert.equal((await ctx.call("PUT", "/api/lin/model", { baseUrl: "ftp://x" })).status, 400);
-    await ctx.call("PUT", "/api/lin/channels", { webhook: { secret: "very-secret", enabled: true } });
-    const webhook = await ctx.call("PUT", "/api/lin/channels", { webhook: { secret: "", enabled: true } });
-    assert.equal(webhook.json.values.webhook.secret.set, true);
-    assert.ok(!JSON.stringify(webhook.json).includes("very-secret"));
+    await ctx.call("PUT", "/api/lin/channels", { webhook: { secret: "very-secret", ownerId: "me" } });
+    const channel = await ctx.call("PUT", "/api/lin/channels", { webhook: { secret: "", enabled: true } });
+    assert.equal(channel.json.values.webhook.secret.set, true);
+    assert.ok(!JSON.stringify(channel.json).includes("very-secret"));
   } finally {
     await ctx.stop();
   }
@@ -222,6 +230,11 @@ test("发消息：202，SSE 先后收到他的 message、她的 message 和 turn
     assert.equal(messages[1].text, "嗯，在的");
     const history = (await ctx.call("GET", "/api/lin/chat/history?limit=10")).json;
     assert.equal(history.messages.length, 2);
+    // 聊过一轮之后，调试视图里有这段聊天的状态（测试里决策模型不走网络，所以是粗略猜测）。
+    const talk = (await ctx.call("GET", "/api/lin/inner")).json.conversation;
+    assert.equal(talk.turns, 1);
+    assert.equal(talk.source, "guess");
+    assert.ok(["opening", "chatting"].includes(talk.mode), talk.mode);
     assert.equal((await ctx.call("POST", "/api/lin/chat/send", { text: "   " })).status, 400);
   } finally {
     controller.abort();

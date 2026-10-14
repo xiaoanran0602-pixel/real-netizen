@@ -1,6 +1,6 @@
 {
   "name": "real-netizen",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "真实网友（Real Netizen）：一个只属于你的 AI 网友，住在本地网页里，记得你、有她自己的生活。零第三方运行依赖。",
   "private": true,
   "type": "module",

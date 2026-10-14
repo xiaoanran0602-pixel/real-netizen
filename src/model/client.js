@@ -19,6 +19,17 @@ const ERROR_MESSAGE_LIMIT = 300;
 const TEST_PROMPT = "只回复一个字：在";
 const TEST_MAX_TOKENS = 32;
 
+/**
+ * 思考余量：调用方给的 maxTokens 只算「正文」，发请求时再按推理强度加上思考可能用掉的部分。
+ * 思考 token 也计入 max_tokens；有的模型（如 Gemini 3.x）思考关不掉，"off" 也会先想一阵，
+ * 不留余量正文就会被截成空。max_tokens 只是上限，不思考的模型用不到这部分，不多花钱。
+ */
+const THINKING_HEADROOM = Object.freeze({ off: 1024, low: 2048, medium: 4096, high: 8192 });
+
+export function withThinkingHeadroom(maxTokens, reasoning) {
+  return maxTokens + (THINKING_HEADROOM[reasoning] ?? THINKING_HEADROOM.medium);
+}
+
 export class ModelError extends Error {
   /** @param {"http"|"network"|"timeout"|"empty"|"config"} kind */
   constructor(kind, message, status) {
@@ -56,6 +67,7 @@ function isReasoningRejection(status, text) {
 async function request(input) {
   const adapter = ADAPTERS[input.protocol] ?? ADAPTERS.anthropic;
   let withReasoning = input.reasoning !== "off";
+  input = { ...input, maxTokens: withThinkingHeadroom(input.maxTokens, input.reasoning) };
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const signals = [AbortSignal.timeout(input.timeoutMs), ...(input.signal ? [input.signal] : [])];
     let response;
@@ -152,7 +164,7 @@ export async function testModels() {
       return { ok: false, ms: Date.now() - started, model, error: error instanceof ModelError ? error.toJSON() : { kind: "network", message: String(error?.message ?? error) } };
     }
   };
-  // 测试时不带推理参数：max_tokens 32 放不下思考。
+  // 测试时不带推理参数；关不掉思考的模型靠 THINKING_HEADROOM.off 兜住。
   const [chat, background] = await Promise.all([run(secrets.chatModel, "off"), run(secrets.backgroundModel || secrets.chatModel, "off")]);
   return { chat, background };
 }

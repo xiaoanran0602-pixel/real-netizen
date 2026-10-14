@@ -122,12 +122,11 @@ test("注入块：激活集受注意预算限制、背景至多 1 条、不可�
   assert.deepEqual(selection.activated.map((t) => t.content), ["相关的一", "相关的二"]);
   assert.deepEqual(selection.background.map((t) => t.content), ["背景里那件事"]);
   const text = formatThoughtsSection(selection);
-  assert.match(text, /# 她此刻脑子里的事/u);
+  assert.ok(text.startsWith("她心里在转的事："));
   assert.ok(text.indexOf("相关的三") < 0, "超出预算的念头不进提示词");
   assert.match(text, /她不会说出来的/u);
-  assert.match(text, /不是待答清单，也不是消息顺序/u);
-  assert.match(text, /可以一个也不说/u);
-  assert.match(text, /不必交代或在结尾补报/u);
+  assert.doesNotMatch(text, /（/u, "只列念头，不附对她的说明");
+  assert.doesNotMatch(text, /你/u);
   assert.doesNotMatch(text, /回复从被打断的状态出发，不是从他的问题出发/u);
 });
 

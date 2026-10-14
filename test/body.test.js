@@ -66,11 +66,19 @@ test("扰动限幅：10 分钟预算 V=24、A=30、T=24，按最小可用比例�
   assert.equal(budgeted.body.impulseWindow.length, 1, "顶满边界也记预算，不能绕过限额");
 });
 
-test("档位滞回：阈值附近不来回换风格", () => {
-  const enter = bandsOf({ valence: 0, activation: 70, energy: 20, tension: 70 }, {});
-  assert.deepEqual(enter, { lowEnergy: true, highActivation: true, highTension: true, valence: "neutral" });
-  const inBand = bandsOf({ valence: 0, activation: 60, energy: 35, tension: 60 }, enter);
-  assert.deepEqual(inBand, { lowEnergy: true, highActivation: true, highTension: true, valence: "neutral" }, "滞回带内保持");
+test("档位滞回：阈值附近不来回换风格；累 55/60、很困 25/30、饿 30/35，没有 lowEnergy", () => {
+  const enter = bandsOf({ valence: 0, activation: 70, energy: 20, tension: 70 }, {}, { fullness: 20 });
+  assert.deepEqual(enter, { tired: true, exhausted: true, hungry: true, highActivation: true, highTension: true, valence: "neutral" });
+  const inBand = bandsOf({ valence: 0, activation: 60, energy: 28, tension: 60 }, enter, { fullness: 33 });
+  assert.deepEqual(inBand, { tired: true, exhausted: true, hungry: true, highActivation: true, highTension: true, valence: "neutral" }, "滞回带内保持");
+  const out = bandsOf({ valence: 0, activation: 50, energy: 31, tension: 50 }, inBand, { fullness: 36 });
+  assert.equal(out.exhausted, false, "很困 > 30 退出");
+  assert.equal(out.tired, true, "累要 > 60 才退出");
+  assert.equal(out.hungry, false, "饿 > 35 退出");
+  assert.equal(bandsOf({ valence: 0, activation: 0, energy: 58, tension: 0 }, {}).tired, false, "累 < 55 才进入");
+  assert.equal(bandsOf({ valence: 0, activation: 0, energy: 58, tension: 0 }, { tired: true }).tired, true);
+  assert.equal(bandsOf({ valence: 0, activation: 0, energy: 61, tension: 0 }, { tired: true }).tired, false);
+  assert.equal("lowEnergy" in enter, false);
   const relaxed = bandsOf({ valence: 25, activation: 0, energy: 90, tension: 0 }, {});
   assert.equal(relaxed.valence, "relaxed");
   assert.equal(bandsOf({ valence: 17, activation: 0, energy: 90, tension: 0 }, relaxed).valence, "relaxed", "退出要低于 15");
@@ -183,11 +191,31 @@ test("中午才生成日程：新计划只从现在采用，过去的时间不�
 });
 
 test("参数集中在版本化对象里；模型不能改系数", () => {
-  assert.equal(BODY_PARAMS.version, "body-v1");
+  assert.equal(BODY_PARAMS.version, "body-v2");
   assert.ok(Object.isFrozen(BODY_PARAMS));
   assert.ok(Object.isFrozen(BODY_PARAMS.tags));
   const body = createBody(DAY0);
   assert.equal(body.paramsVersion, BODY_PARAMS.version);
+  assert.equal(body.schemaVersion, 2);
   assert.equal(body.epoch, 1);
   assert.deepEqual(body.inputVersions, { schedule: 0, weather: 0, thoughts: 0 });
+  assert.equal(body.psyche.selfWorth, 55);
+  assert.equal(body.psyche.closedDay, DAY);
+});
+
+test("中层修正：生病/加班周清醒消耗 ×1.3、假期 ×0.8、恢复不受影响；饥饿最多让愉悦 −6、张力 +6", () => {
+  const values = { valence: 8, activation: 25, energy: 70, tension: 10 };
+  const work = { load: 0.65, recovery: 0, physical: 0, asleep: false, weather: 0, thoughtLoad: 0, expectedLoad: 0 };
+  const base = targetsOf(values, work).energyRatePerHour;
+  assert.ok(base < 0);
+  assert.ok(Math.abs(targetsOf(values, { ...work, condition: { drain: 1.3, energyCap: 60 } }).energyRatePerHour - base * 1.3) < 1e-9);
+  assert.ok(Math.abs(targetsOf(values, { ...work, condition: { drain: 0.8, energyCap: 100 } }).energyRatePerHour - base * 0.8) < 1e-9);
+  const rest = { ...work, load: 0, recovery: 0.6 };
+  assert.equal(targetsOf(values, { ...rest, condition: { drain: 1.3 } }).energyRatePerHour, targetsOf(values, rest).energyRatePerHour, "恢复不乘");
+  const hungry = targetsOf(values, { ...work, hunger: 1 });
+  const full = targetsOf(values, work);
+  assert.ok(Math.abs(full.valence - hungry.valence - 6) < 1e-9);
+  assert.ok(Math.abs(hungry.tension - full.tension - 6) < 1e-9);
+  const half = targetsOf(values, { ...work, hunger: 0.5 });
+  assert.ok(Math.abs(half.tension - full.tension - 3) < 1e-9, "按饥饿程度");
 });

@@ -24,7 +24,8 @@ export function buildModelMessages(messages, options = {}) {
     if (!text || (message.role !== "user" && message.role !== "assistant")) continue;
     if (picked.length >= maxMessages) break;
     if (picked.length > 0 && chars + text.length > charBudget) break;
-    picked.push({ role: message.role, content: text });
+    // 只移除模型上下文中的旧气泡边界，不删文字、不改存档，避免四段式成为格式示范。
+    picked.push({ role: message.role, content: options.flattenAssistant && message.role === "assistant" ? text.replace(/\n\s*\n/gu, "\n") : text });
     chars += text.length;
   }
   picked.reverse();

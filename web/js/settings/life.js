@@ -33,7 +33,7 @@ export function renderLife(container) {
   const list = h("div", { class: "lin-form" }, "…");
   const options = settingsForm([
     { key: "canGetSick", label: "她会生病", kind: "toggle", hint: "关掉后不再掷骰（感冒、加班周、假期）。" },
-    { key: "sickMissCap", label: "生病时有多依赖你", kind: "range", min: 70, max: 95, hint: "生病期间想念的上限，平时是 70。" },
+    { key: "sickMissCap", label: "生病时有多依赖你", kind: "range", min: 70, max: 95, hint: "生病期间对你的想念会放大多少。" },
     { key: "dayBoundaryHour", label: "一天从几点算起（0–6）", kind: "number", min: 0, max: 6, hint: "凌晨这个点之前的聊天算前一天；每天的整理和存档也在这个点。" },
   ]);
 

@@ -7,7 +7,7 @@
 // 两处模型调用都不会阻塞回复：
 //   collide  主模型调用前给相关度打分，800ms 超时 → 退化成按强度取前 N
 //   extract  聊天后异步抽新念头、闭合、标记被碰到的（与记忆整理同一轮）
-// 池子内容不进聊天渠道，也不自动进网页（调试面板默认折叠，docs/13 第 4 节）。
+// 池子内容不进 Wave，也不自动进网页（调试面板默认折叠，docs/13 第 4 节）。
 // ============================================================
 
 import { paths } from "../config/paths.js";
@@ -227,7 +227,8 @@ export function selectThoughts(groups, options = {}) {
   return selectForPrompt(groups, options);
 }
 
-function extractPrompt(conversation, thoughts) {
+/** 念头抽取的提示词（导出给测试用）。 */
+export function extractPrompt(conversation, thoughts) {
   return [
     "下面是一个人和她的聊天，以及她此刻心里的念头。",
     "整理这批念头：新出现的、已经被回应而闭合的、被这轮聊天碰到的。",
@@ -239,7 +240,7 @@ function extractPrompt(conversation, thoughts) {
     "- 她对他的判断（比如「他说不在乎的时候都在乎」）→ source=infer，decay=slow_fade；他反驳时不删，只降强度。",
     "- 他推荐的东西 → source=him，closes_on 写「她看了/听了」。",
     "- 她生活里的事 → source=life；外面的世界 → source=world。",
-    "- 用她的口吻写，一句话，不超过 40 字，写具体的事，不要写情绪标签。",
+    "- 一句平实的话，写具体的事，不超过 40 字；不修辞不打比方，不要写情绪标签。",
     "- 可说与不可说大约 7:3：不可说太少她就透明，太多会显得冷。",
     "- demand 是这件事有多少待处理的负荷（0–1）；纯愉快的期待写低值或省略。",
     "- 没有值得记的就给空的 new。",

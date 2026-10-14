@@ -5,7 +5,6 @@ import { paths } from "../src/config/paths.js";
 import { normalizeSettings, readSettings, updateSettings, validateSettingsPatch } from "../src/config/settings.js";
 import {
   ensureAccessToken,
-  isChannelReady,
   maskChannelSecrets,
   maskModelSecrets,
   mergeModelPatch,
@@ -26,20 +25,6 @@ test("settings defaults: low reasoning, clamped tokens, day boundary 4, can get 
   assert.equal(settings.canGetSick, true);
   assert.equal(settings.backgroundReasoningLevel, "medium");
   assert.equal(settings.sickMissCap, 85);
-  assert.equal(settings.userName, "");
-  assert.equal(settings.imageModel, "gpt-image-1");
-  assert.equal(settings.imagesEnabled, true);
-});
-
-test("settings: userName 可以为空，imageModel / imagesEnabled 可改", () => {
-  const settings = normalizeSettings({ userName: "  ", imageModel: "gpt-image-2", imagesEnabled: false });
-  assert.equal(settings.userName, "");
-  assert.equal(settings.imageModel, "gpt-image-2");
-  assert.equal(settings.imagesEnabled, false);
-  const patch = validateSettingsPatch({ imageModel: "gpt-image-1", imagesEnabled: true, userName: "阿澄" });
-  assert.deepEqual(patch.rejected, []);
-  assert.equal(patch.accepted.imageModel, "gpt-image-1");
-  assert.equal(validateSettingsPatch({ imageModel: 123 }).rejected[0], "imageModel");
 });
 
 test("settings: legacy memoryReasoningLevel maps to backgroundReasoningLevel; mainTaskId dropped", () => {
@@ -47,6 +32,23 @@ test("settings: legacy memoryReasoningLevel maps to backgroundReasoningLevel; ma
   assert.equal(settings.backgroundReasoningLevel, "high");
   assert.equal("mainTaskId" in settings, false);
   assert.equal("memoryModelId" in settings, false);
+});
+
+test("settings: leftover innerEngineMode is silently dropped (merged engine has no mode); patching it is rejected", async () => {
+  assert.equal("innerEngineMode" in normalizeSettings({ innerEngineMode: "body" }), false);
+  assert.equal("innerEngineMode" in normalizeSettings({}), false);
+  assert.deepEqual(validateSettingsPatch({ innerEngineMode: "shadow" }).rejected, ["innerEngineMode"]);
+  const { cleanup } = await useTempData();
+  try {
+    await writeFile(paths.settings(), JSON.stringify({ innerEngineMode: "legacy", companionName: "澈" }));
+    const settings = await readSettings();
+    assert.equal(settings.companionName, "澈");
+    assert.equal("innerEngineMode" in settings, false);
+    assert.deepEqual((await updateSettings({ fontSize: 16 })).rejected, []);
+    assert.equal("innerEngineMode" in JSON.parse(await readFile(paths.settings(), "utf8")), false, "下一次保存时旧字段消失");
+  } finally {
+    await cleanup();
+  }
 });
 
 test("settings patch validation rejects unknown and invalid fields", () => {
@@ -106,8 +108,6 @@ test("channel secrets: blank secret fields keep old values, mask hides them", as
     const config = await readChannelSecrets();
     assert.equal(config.telegram.botToken, "sk-tok-123456");
     assert.equal(config.telegram.ownerChatId, "42");
-    assert.equal(config.telegram.enabled, true);
-    assert.equal(isChannelReady("telegram", config), true);
     const masked = maskChannelSecrets(config);
     assert.equal(masked.telegram.botToken.set, true);
     assert.equal(masked.telegram.botToken.tail, "3456");

@@ -1,15 +1,36 @@
-// P1：日程标签、惰性结算、对照表、防线公式（docs/12 第 3–7、13 节），以及 P1 验收：
-// 12:30 后饱腹回满；凌晨精力低时出现"很困"；提示里只有文字没有数字；结算结果与心跳频率无关。
+// 日程标签（docs/12 第 4 节）与合并引擎的接线（merge-inner-engines）：
+// 一轮聊天只注入一节状态；念头预算随精力变化；记忆整理事件改变慢层；提示里只有文字没有数字；
+// 兼容视图（reply-timing / 动态调度器读的 inner.vitals.*）来自内核快照与派生读数。
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildSystemPrompt } from "../src/companion/prompt.js";
-import { formatStateSection, GUARD_HINTS, isSafetyRisk, mapInner } from "../src/inner/mapping.js";
+import { updateSettings } from "../src/config/settings.js";
+import { closeSegments, normalizeSchedule } from "../src/inner/body-drivers.js";
+import { createInnerHooks } from "../src/inner/hooks.js";
+import { createKernel } from "../src/inner/kernel.js";
+import { isSafetyRisk } from "../src/inner/mapping.js";
+import { createInnerProvider } from "../src/inner/provider.js";
+import { currentInner } from "../src/inner/state.js";
 import { daySlots, parseSchedule, slotAt } from "../src/inner/tags.js";
-import { applyEvents, applyUserTurn, BASELINE, computeGuard, initialInner, settle } from "../src/inner/vitals.js";
-import { at } from "./helpers.js";
+import { seedPool } from "../src/inner/thought-store.js";
+import { at, useTempData } from "./helpers.js";
 
 const DAY = ["07:30 [起床] 起来", "08:30 [通勤] 地铁", "09:30 [上班] 改稿", "12:30 [吃饭] 楼下面馆", "13:30 [上班] 开工", "19:00 [吃饭] 晚饭", "20:00 [空闲] 看书", "23:30 [睡觉] 睡了"].join("\n");
-const slotsFor = () => daySlots(DAY);
+const T0 = at(2026, 10, 10, 15, 0).getTime();
+const timeline = (thoughts = []) => ({
+  segments: closeSegments(normalizeSchedule([{ start: 0, tag: "睡觉" }, { start: 8 * 60, tag: "起床" }, { start: 9 * 60, tag: "上班" }, { start: 23 * 60, tag: "睡觉" }], { date: "2026-10-10", adoptedAt: at(2026, 10, 10).getTime(), version: 1 })),
+  world: null,
+  city: "上海",
+  thoughts,
+});
+
+async function kernelAt(clock, thoughts) {
+  const kernel = createKernel({ loadTimeline: async () => timeline(thoughts), now: () => clock.now });
+  await kernel.start();
+  return kernel;
+}
+
+const quietClassifier = async (_text, thoughts) => ({ scores: Object.fromEntries(thoughts.map((t) => [t.id, 0.9])), appraisal: null });
 
 test("标签：不认识的忽略、斜杠取第一个认识的、没有任何标签的旧日程按兜底、实际覆盖时段", () => {
   const parsed = parseSchedule("09:00 [开会/加班] 周会\n10:00 [瞎写] 什么\n11:00 没标签");
@@ -20,94 +41,95 @@ test("标签：不认识的忽略、斜杠取第一个认识的、没有任何�
   const actual = daySlots(`${DAY}\n实际：15:20 [开会] 临时被叫去开会`);
   assert.equal(slotAt(actual, 15 * 60 + 30).tag, "开会");
   assert.equal(slotAt(actual, 19 * 60 + 10).tag, "吃饭");
-});
-
-test("饱腹：12:30 进入吃饭时段后回满；睡觉时精力恢复", () => {
-  const start = at(2026, 10, 12, 11, 0).getTime();
-  const state = { ...initialInner(start), vitals: { ...initialInner().vitals, fullness: 20 } };
-  const lunch = settle(state, at(2026, 10, 12, 12, 45).getTime(), { slotsFor }).state;
-  assert.ok(lunch.vitals.fullness >= 85, `fullness=${lunch.vitals.fullness}`);
-  const tired = { ...initialInner(at(2026, 10, 12, 23, 30).getTime()), vitals: { ...initialInner().vitals, energy: 20 } };
-  const morning = settle(tired, at(2026, 10, 13, 7, 0).getTime(), { slotsFor }).state;
-  assert.ok(morning.vitals.energy > 70, `energy=${morning.vitals.energy}`);
-});
-
-test("结算与心跳频率无关：一次结算到底 = 每 7 分钟结算一次", () => {
-  const from = at(2026, 10, 12, 6, 3).getTime();
-  const to = at(2026, 10, 14, 9, 41).getTime();
-  const options = { slotsFor, lastUserMessageAt: at(2026, 10, 12, 8, 17).getTime() };
-  const once = settle(initialInner(from), to, options).state;
-  let stepped = initialInner(from);
-  for (let t = from + 7 * 60_000; t < to; t += 7 * 60_000) stepped = settle(stepped, t, options).state;
-  stepped = settle(stepped, to, options).state;
-  for (const key of Object.keys(once.vitals)) assert.ok(Math.abs(once.vitals[key] - stepped.vitals[key]) < 1e-6, key);
-  for (const key of Object.keys(once.tensions)) assert.ok(Math.abs(once.tensions[key] - stepped.tensions[key]) < 1e-6, key);
-});
-
-test("想念：沉默 4 小时后才开始涨，上限 70；他来一轮 −10，同一会话最多 −30", () => {
-  const lastUser = at(2026, 10, 12, 9, 0).getTime();
-  const state = initialInner(lastUser);
-  const early = settle(state, at(2026, 10, 12, 12, 59).getTime(), { slotsFor, lastUserMessageAt: lastUser }).state;
-  assert.equal(early.vitals.missing, state.vitals.missing);
-  const long = settle(state, at(2026, 10, 15, 9, 0).getTime(), { slotsFor, lastUserMessageAt: lastUser }).state;
-  assert.equal(long.vitals.missing, 70);
-  let current = long;
-  for (let i = 0; i < 5; i += 1) current = applyUserTurn(current, lastUser + 3 * 86_400_000 + i * 60_000).state;
-  assert.equal(current.vitals.missing, 40);
-});
-
-test("自我感觉与张力：事件判断加减；缺字段当 false", () => {
-  const state = initialInner();
-  const { state: next } = applyEvents(state, { praisedByHim: true, deflectedIdeal: true, deepTalk: true }, Date.now());
-  assert.equal(next.vitals.selfWorth, BASELINE.selfWorth + 5);
-  assert.equal(next.tensions.book, state.tensions.book + 5);
-  assert.equal(next.tensions.seen, state.tensions.seen - 10);
-  assert.equal(applyEvents(state, {}, Date.now()).reason, null);
-});
-
-test("防线公式：基线 100；压力与疲惫扣分；深夜 −15；喝酒后 3 小时 −15", () => {
-  const day = at(2026, 10, 12, 15).getTime();
-  assert.equal(computeGuard({ stress: 30, energy: 70 }, day), 100);
-  assert.equal(computeGuard({ stress: 80, energy: 20 }, day), 100 - 50 * 0.6 - 40 * 0.5);
-  assert.equal(computeGuard({ stress: 30, energy: 70 }, at(2026, 10, 12, 1).getTime()), 85);
-  assert.equal(computeGuard({ stress: 30, energy: 70 }, day, day - 60 * 60_000), 85);
-  assert.equal(computeGuard({ stress: 30, energy: 70 }, day, day - 4 * 60 * 60_000), 100);
-});
-
-test("对照表：凌晨精力低出现「很困」并限一段；最多两句状态提示 + 防线；安全例外去掉疲惫与防线", () => {
-  const night = at(2026, 10, 12, 1, 30).getTime();
-  const inner = { ...initialInner(), vitals: { energy: 15, fullness: 15, stress: 85, missing: 60, selfWorth: 30 } };
-  const mapped = mapInner(inner, { now: night });
-  assert.ok(mapped.hints.some((hint) => hint.startsWith("你很困，")));
-  assert.equal(mapped.maxSegments, 1);
-  assert.ok(mapped.hints.length <= 2);
-  assert.equal(mapped.guardHint, GUARD_HINTS.thin);
-  assert.ok(!mapped.hints.some((hint) => hint.includes("想找他")), "生存优先：想念不参与");
-  const safe = mapInner(inner, { now: night, safety: true });
-  assert.equal(safe.guardHint, null);
-  assert.ok(!safe.hints.some((hint) => hint.startsWith("你很困，")));
-  assert.equal(safe.maxSegments, null);
   assert.ok(isSafetyRisk("我真的撑不下去了"));
 });
 
-test("提示词里的状态小节只有文字，没有任何数字", () => {
-  const inner = { ...initialInner(), vitals: { energy: 40, fullness: 25, stress: 70, missing: 55, selfWorth: 80 } };
-  const section = formatStateSection(mapInner(inner, { now: at(2026, 10, 12, 21).getTime() }));
-  assert.match(section, /^# 你现在的状态/u);
-  assert.ok(!/\d/u.test(section), section);
-  const prompt = buildSystemPrompt({ persona: "人设", settings: { userName: "阿澄" }, now: at(2026, 10, 12, 21), life: { recentDays: [] }, memories: [], recentText: "", innerText: section });
-  assert.ok(prompt.dynamic.includes(section));
-  assert.ok(!prompt.stable.includes("你现在的状态"));
+test("一轮聊天只注入一行「她这会儿的状态」；提示里没有数字", async () => {
+  const { cleanup } = await useTempData();
+  try {
+    const clock = { now: T0 };
+    const kernel = await kernelAt(clock);
+    await kernel.accept({ id: "force:1", type: "force", occurredAt: T0, payload: { event: "stress" } });
+    await kernel.accept({ id: "force:2", type: "force", occurredAt: T0, payload: { event: "tired" } });
+    const provide = createInnerProvider({ kernel, classifier: quietClassifier });
+    const result = await provide({ now: new Date(T0), messages: [{ id: "m1", role: "user", text: "在吗" }], source: "web" });
+    assert.equal(result.text.match(/她这会儿的状态/gu)?.length, 1);
+    assert.doesNotMatch(result.text, /你现在的状态|你此刻的状态/u);
+    assert.equal(result.maxSegments, 1, "很困只回一段");
+    const section = result.text.split("\n\n")[0];
+    assert.ok(!/\d/u.test(section), section);
+    const prompt = buildSystemPrompt({ persona: "人设", settings: { userName: "阿澄" }, now: new Date(T0), life: { recentDays: [] }, memories: [], recentText: "", innerText: result.text });
+    assert.ok(prompt.dynamic.includes(section));
+    assert.ok(!prompt.stable.includes("她这会儿的状态"));
+  } finally {
+    await cleanup();
+  }
 });
 
-test("叔本华溢流：被看见在高位却漏不出来 → 每天 2 点流进写书；当天漏过就不流", () => {
-  const from = at(2026, 10, 12, 10).getTime();
-  const to = at(2026, 10, 13, 10).getTime();
-  const base = { ...initialInner(from), vitals: { ...initialInner().vitals, missing: 30 }, tensions: { book: 40, seen: 70 }, writingDays: ["2026-10-12"] };
-  const blocked = settle(base, to, { slotsFor, lastUserMessageAt: to }).state;
-  assert.equal(blocked.tensions.seen, 68);
-  assert.equal(blocked.tensions.book, 42);
-  const leaked = settle({ ...base, lastTurning: { seen: "2026-10-12" } }, to, { slotsFor, lastUserMessageAt: to }).state;
-  assert.equal(leaked.tensions.seen, 70);
-  assert.equal(leaked.tensions.book, 40);
+test("念头注意预算随精力变化：精力足时「正在想」能放下更多条，困了只剩一条", async () => {
+  const { cleanup } = await useTempData();
+  try {
+    await seedPool(["一", "二", "三", "四"].map((n) => ({ content: `念头${n}`, source: "life", strength: 50 })), T0);
+    const clock = { now: T0 };
+    const kernel = await kernelAt(clock);
+    const countActive = (text) => {
+      const block = text.split("和他这条消息有关的：")[1]?.split(/\n(?!- )/u)[0] ?? "";
+      return block.split("\n").filter((line) => line.startsWith("- ")).length;
+    };
+    const fresh = await createInnerProvider({ kernel, classifier: quietClassifier })({ now: new Date(T0), messages: [{ id: "a1", role: "user", text: "随便" }], source: "web" });
+    assert.equal(countActive(fresh.text), 3, "精力 70、张力 10：预算 3");
+    await kernel.accept({ id: "force:t", type: "force", occurredAt: T0, payload: { event: "tired" } });
+    await kernel.accept({ id: "force:s", type: "force", occurredAt: T0, payload: { event: "stress" } });
+    const tired = await createInnerProvider({ kernel, classifier: quietClassifier })({ now: new Date(T0), messages: [{ id: "a2", role: "user", text: "随便" }], source: "web" });
+    assert.equal(countActive(tired.text), 1, "困了：预算 1");
+    const safe = await createInnerProvider({ kernel, classifier: quietClassifier })({ now: new Date(T0), messages: [{ id: "a3", role: "user", text: "我不想活了" }], source: "web" });
+    assert.equal(countActive(safe.text), 4, "安全例外放开到 4");
+    assert.doesNotMatch(safe.text, /她这会儿的状态/u, "安全例外不注入疲惫与防线");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("记忆整理事件改变慢层：夸她 → 自我感觉上升；同一轮重试不双算；没发生任何事不提交", async () => {
+  const { cleanup } = await useTempData();
+  try {
+    const clock = { now: T0 };
+    const kernel = await kernelAt(clock);
+    const hooks = createInnerHooks({ kernel });
+    const before = kernel.snapshot(T0).psyche;
+    assert.equal((await hooks.onCuratorEvents({ praisedByHim: true, deflectedIdeal: true, askedAboutHer: true, dismissedByHim: false }, new Date(T0), { runId: "m7" })).result, "accepted");
+    assert.equal((await hooks.onCuratorEvents({ praisedByHim: true, deflectedIdeal: true, askedAboutHer: true, dismissedByHim: false }, new Date(T0), { runId: "m7" })).result, "duplicate");
+    const after = kernel.snapshot(T0).psyche;
+    assert.equal(after.selfWorth, before.selfWorth + 5);
+    assert.equal(after.book, before.book + 5);
+    assert.equal(after.seen, before.seen - 10);
+    assert.equal((await hooks.onCuratorEvents({ praisedByHim: false }, new Date(T0), { runId: "m8" })).result, "skipped");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("兼容视图：currentInner 来自内核快照；想念由他的念头派生（他只是很久没说话不会上涨）", async () => {
+  const { cleanup } = await useTempData();
+  try {
+    await updateSettings({ sickMissCap: 85 });
+    const clock = { now: T0 };
+    const quiet = await kernelAt(clock);
+    const idle = await currentInner(new Date(T0 + 3 * 86_400_000), { kernel: quiet });
+    assert.equal(idle.inner.vitals.missing, 0, "没有他的念头 → 想念 0");
+    const kernel = await kernelAt(clock, [{ id: "t1", source: "him", strength: 60, closed: false }, { id: "t2", source: "him", strength: 60, closed: false }]);
+    const current = await currentInner(new Date(T0), { kernel });
+    const snap = kernel.snapshot(T0);
+    assert.equal(current.inner.vitals.energy, snap.values.energy);
+    assert.equal(current.inner.vitals.stress, snap.values.tension, "旧「压力」读的是张力");
+    assert.equal(Math.round(current.inner.vitals.missing), 63);
+    assert.equal(current.inner.vitals.selfWorth, 55);
+    assert.deepEqual(current.inner.tensions, { book: 40, seen: 30 });
+    assert.equal(current.mapped.delayFactor, 0.5, "想念高时回他快一点");
+    const none = await currentInner(new Date(T0), { kernel: null });
+    assert.equal(none.inner, null);
+    assert.equal(none.mapped.degraded, true);
+  } finally {
+    await cleanup();
+  }
 });

@@ -36,14 +36,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   /** 「一天」的分界（0–6 点）：凌晨 1 点的聊天算前一天。 */
   dayBoundaryHour: 4,
   canGetSick: true,
-  /** 生病时想念上限（依赖强度），70–95。 */
+  /** 生病时对他的想念放大多少（想念 × sickMissCap / 70），70–95。 */
   sickMissCap: 85,
-  /**
-   * 内心状态由谁控制（docs/14 第 10.2 节）：
-   *   legacy 旧版五个体征控制；shadow 旧版控制、新内核只算并记录对照；body 新内核唯一控制。
-   * 首版默认 shadow：两套都跑，但只有旧版影响回复，先观察曲线再切换。
-   */
-  innerEngineMode: "shadow",
   /** 念头池（docs/13）：开着时「她此刻脑子里的事」进提示词，溢出的念头会主动找你或发朋友圈。 */
   thoughtsEnabled: true,
   /** 推荐作品的后台检索与有来源的模拟观看/阅读。 */
@@ -77,7 +71,6 @@ export const SETTINGS_FIELDS = Object.freeze({
   dayBoundaryHour: isInt(0, 6),
   canGetSick: isBool,
   sickMissCap: isInt(70, 95),
-  innerEngineMode: oneOf("legacy", "shadow", "body"),
   thoughtsEnabled: isBool,
   mediaEnabled: isBool,
 });

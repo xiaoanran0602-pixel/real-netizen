@@ -12,6 +12,7 @@ import { readSettings } from "../config/settings.js";
 import { getMainConversationId, readConversation } from "../store/conversation.js";
 import { createLogger } from "../util/log.js";
 import { formatHM, HOUR_MS, MINUTE_MS } from "../util/time.js";
+import { kernelThoughts } from "./derive.js";
 import { promiseFromReply, promiseToBusyUntil } from "./promises.js";
 import { currentSlot } from "./state.js";
 import { drainOutlets as drain, rememberEvicted } from "./thought-context.js";
@@ -51,7 +52,7 @@ export function createThoughtsRuntime(deps = {}) {
     if (!deps.kernel) return;
     const version = pool.at || now();
     await deps.kernel
-      .accept({ id: `thoughts:${version}:${pool.thoughts.length}`, type: "thoughts_changed", occurredAt: now(), payload: { version, thoughts: pool.thoughts.map((t) => ({ id: t.id, strength: t.strength, closed: t.decay === "fade" && !t.affect, affect: t.affect })) } })
+      .accept({ id: `thoughts:${version}:${pool.thoughts.length}`, type: "thoughts_changed", occurredAt: now(), payload: { version, thoughts: kernelThoughts(pool.thoughts) } })
       .catch(() => undefined);
   }
 

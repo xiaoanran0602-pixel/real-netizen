@@ -1,11 +1,12 @@
 // chat-service：串行顺序、失败不写回复、重发复用、主动消息入队、历史窗口、事件广播（假模型）。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createChatService } from "../src/chat/chat-service.js";
+import { createChatService, stripSpeakerPrefix } from "../src/chat/chat-service.js";
 import { buildModelMessages, HISTORY_MAX_MESSAGES } from "../src/chat/history.js";
 import { getMainConversationId, readConversation } from "../src/store/conversation.js";
 import { readState } from "../src/store/state.js";
 import { useTempData } from "./helpers.js";
+import { planReply } from "../src/companion/reply-plan.js";
 
 /** 假模型：按最后一条 user 消息回复；可设延迟与失败词。 */
 function fakeComplete({ delayMs = 0, failOn = "坏" } = {}) {
@@ -163,4 +164,50 @@ test("system task jumps the queue when front=true and blocked queue only runs fo
   } finally {
     await cleanup();
   }
+});
+
+test("回复开头的「林澈：」前缀去掉；重新生成时已先回的那句用第三人称写进此刻", async () => {
+  assert.equal(stripSpeakerPrefix("林澈：在呢"), "在呢");
+  assert.equal(stripSpeakerPrefix("林澈: 在呢", "林澈"), "在呢");
+  assert.equal(stripSpeakerPrefix("在呢，林澈：不是前缀"), "在呢，林澈：不是前缀");
+  const { cleanup } = await useTempData();
+  try {
+    const prompts = [];
+    const complete = async () => "林澈：好了，接着说";
+    const service = createChatService({ complete, buildPrompt: async (input) => (prompts.push(input), { system: { stable: "S", dynamic: "D" } }) });
+    await service.sendUserMessage("在吗", { source: "channel", deferReply: true });
+    await service.appendAssistant("在开会，晚点说");
+    const result = await service.regenerate({ source: "channel", deferReply: true });
+    assert.equal(result.reply, "好了，接着说");
+    const now = prompts.at(-1).extraNow.join("");
+    assert.match(now, /她刚才已经先回了一句：「在开会，晚点说」/u);
+    assert.doesNotMatch(now, /你/u);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("规划路径：网页只收到通过检查的正文，渠道延后写入也用同一正文", async () => {
+  const { cleanup } = await useTempData();
+  try {
+    for (const source of ["web", "channel"]) {
+      let calls = 0;
+      const events = [];
+      const after = [];
+      const service = createChatService({ readSettings: async () => ({ replyMode: "stream" }), broadcast: (type, data) => events.push({ type, data }), buildPrompt: async ({ messages }) => ({ system: "S", replyPlan: planReply({ messages }), afterTurn: async (reply) => after.push(reply) }), complete: async (opts) => { calls += 1; opts.onDelta?.("不该露出的草稿"); return calls % 2 ? "早。\n\n我刚醒。\n\n今天头还疼吗？" : "早，刚醒"; } });
+      const result = await service.sendUserMessage("早，", { source, deferReply: source === "channel" });
+      assert.equal(result.ok, true);
+      assert.equal(result.reply, "早，刚醒");
+      assert.equal(result.replyCheck.rewritten, true);
+      assert.deepEqual(after, ["早，刚醒"]);
+      assert.ok(events.every((e) => !JSON.stringify(e).includes("草稿")));
+      const deltas = events.filter((e) => e.type === "delta");
+      assert.equal(deltas.length, source === "channel" ? 0 : 1);
+      if (source === "channel") {
+        assert.equal((await messages()).at(-1).role, "user");
+        await service.appendAssistant(result.reply);
+      }
+      assert.equal((await messages()).at(-1).text, "早，刚醒");
+    }
+  } finally { await cleanup(); }
 });

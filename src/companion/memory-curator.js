@@ -129,7 +129,8 @@ export function createMemoryCurator(options = {}) {
     const proposed = new Set(result.recalled);
     const recalled = recalledInTurn(memories.filter((entry) => proposed.has(entry.file)).map((entry) => ({ entry, text: entry.body })), userText).map((entry) => entry.file);
     await hooks.onRecalled?.(recalled, at);
-    await hooks.onEvents?.(result.events, at);
+    // runId：这一轮整理到的最后一条消息。重试同一轮时 id 不变，内核按它去重。
+    await hooks.onEvents?.(result.events, at, { runId: last.id });
     return { applied, rejected: [...invalid, ...rejected], recalled, events: result.events };
   }
 

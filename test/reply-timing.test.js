@@ -1,8 +1,11 @@
 // P2：渠道不秒回（docs/12 第 10 节）。开会时段先占位、30 分钟内正式回；睡着时醒来先回且知道几点发的；
 // 轻生关键词立即回；待发期间他又说话合并重生成；重启后按原定时间继续。
+// 合并引擎：延迟系数与生病硬上限来自 currentInner（内核快照 + express），reply-timing 本身不改。
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createKernel } from "../src/inner/kernel.js";
 import { createReplyTiming, HARD_CAP_MIN, HARD_CAP_SICK_MIN, planReply } from "../src/inner/reply-timing.js";
+import { currentInner } from "../src/inner/state.js";
 import { daySlots, slotAt } from "../src/inner/tags.js";
 import { at, useTempData } from "./helpers.js";
 
@@ -134,6 +137,38 @@ test("重启恢复：过期的立即发，没到的按原定时间", async () =>
     const restarted = harness(new Date(due + 60_000), (now) => stateAt(now));
     assert.equal(await restarted.timing.restore(restarted.ctx), true);
     assert.equal(restarted.sent.at(-1).text, "回复1");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("合并引擎接线：很困延迟 ×1.6；感冒时硬上限放宽到 45 分钟；想念来自念头池（他的念头多时深夜倾向秒回）", async () => {
+  const { cleanup } = await useTempData();
+  try {
+    const now = at(2026, 10, 10, 14, 10);
+    const thoughts = [];
+    const kernel = createKernel({ loadTimeline: async () => ({ segments: [], world: null, city: "上海", thoughts }), now: () => now.getTime() });
+    await kernel.start();
+    const plan = async (texts = ["在吗"], when = now) => {
+      const state = await currentInner(when, { kernel });
+      return { state, plan: planReply({ now: when, slot: slotAt(slots, when.getHours() * 60 + when.getMinutes()), slots, mapped: { ...state.mapped, inner: state.inner?.vitals }, condition: state.condition, texts, random: () => 0.99 }) };
+    };
+    const calm = await plan();
+    assert.equal(calm.state.mapped.delayFactor, 1);
+    await kernel.accept({ id: "force:tired", type: "force", occurredAt: now.getTime(), payload: { event: "tired" } });
+    const tired = await plan();
+    assert.ok(Math.abs(tired.state.mapped.delayFactor - 1.6) < 1e-9, "很困 ×1.6");
+    assert.ok(tired.plan.delayMs <= HARD_CAP_MIN.very_busy * 60_000);
+    await kernel.accept({ id: "dice:2026-10-10", type: "condition_set", occurredAt: now.getTime(), payload: { condition: { kind: "cold", from: "2026-10-10", until: "2026-10-12" }, diceDay: "2026-10-10" } });
+    const sick = await plan();
+    assert.equal(sick.state.condition.kind, "cold");
+    assert.ok(sick.plan.delayMs > HARD_CAP_MIN.very_busy * 60_000 && sick.plan.delayMs <= HARD_CAP_SICK_MIN * 60_000);
+    thoughts.push({ id: "a", source: "him", strength: 90, closed: false }, { id: "b", source: "him", strength: 90, closed: false });
+    await kernel.refreshTimeline();
+    const late = at(2026, 10, 10, 23, 20);
+    const missing = await plan(["还在吗"], late);
+    assert.ok(missing.state.inner.vitals.missing >= 50);
+    assert.ok(missing.plan.delayMs <= 60_000, "23 点后醒着且想念高：倾向秒回");
   } finally {
     await cleanup();
   }

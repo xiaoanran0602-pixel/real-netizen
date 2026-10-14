@@ -2,15 +2,14 @@
 // 掷骰（docs/12 第 9 节）：每天第一次生成日程前掷一次。
 //   感冒约每 45 天一次（2–4 天），加班周约每 30 天一次（3–5 天），假期约每 90 天一次（2–7 天）。
 //   正在生病/加班/假期时不再掷；「她会生病」关掉后不再掷骰。
-//   结果写进 inner.condition {kind, from, until}，同一天只掷一次（inner.diceDay）。
+//   结果以 condition_set 事件交给内核（id = dice:<day>）：同一天第二次掷会被内核当作重复丢弃。
 //   生成日程时把它作为一句事实告诉模型，模型据此打「生病」「加班」标签。
 // 不让模型决定概率：数字只在这里。
 // ============================================================
 
 import { readSettings } from "../config/settings.js";
 import { addDays, daysBetween, formatLocalDate } from "../util/time.js";
-import { mutateInner } from "./store.js";
-import { activeCondition, CONDITIONS } from "./vitals.js";
+import { activeCondition, CONDITIONS } from "./psyche.js";
 
 export const DICE = Object.freeze({
   cold: { chance: 1 / 45, minDays: 2, maxDays: 4 },
@@ -26,14 +25,14 @@ const FACT_TEXT = Object.freeze({
 
 /**
  * 纯函数：今天要不要开始一个事件。已有事件在生效时返回 null。
- * @param {{condition?: any}} state
+ * @param {{condition?: any}} psyche
  * @param {string} day
  * @param {{canGetSick: boolean}} options
  * @param {() => number} random
  */
-export function rollCondition(state, day, options, random = Math.random) {
+export function rollCondition(psyche, day, options, random = Math.random) {
   // 文档第 9 节：开关关掉后不再掷骰（三种都不掷，网页提示也是这么写的）。
-  if (!options.canGetSick || activeCondition(state, day)) return null;
+  if (!options.canGetSick || activeCondition(psyche, day)) return null;
   for (const kind of ["cold", "overtime", "vacation"]) {
     if (random() >= DICE[kind].chance) continue;
     return startCondition(kind, day, random);
@@ -59,24 +58,30 @@ export function conditionFact(condition, day) {
 
 /**
  * life-scheduler 的 factsProvider 片段：今天掷一次（已掷过就不再掷），返回事实。
+ * @param {{snapshot: Function, accept: Function}} kernel
  * @param {Date} now
  * @param {() => number} [random]
  */
-export async function diceFacts(now, random = Math.random) {
+export async function diceFacts(kernel, now, random = Math.random) {
   const day = formatLocalDate(now);
-  const settings = await readSettings();
-  const state = await mutateInner((current) => {
-    if (current.diceDay === day) return { state: current };
-    const rolled = rollCondition(current, day, { canGetSick: settings.canGetSick !== false }, random);
-    const next = { ...current, diceDay: day, ...(rolled ? { condition: rolled } : {}) };
-    return { state: next, reason: rolled ? { kind: "dice", condition: rolled } : null };
-  });
-  const fact = conditionFact(state.condition, day);
+  const before = kernel.snapshot(now.getTime());
+  if (!before?.psyche) return [];
+  if (before.psyche.diceDay !== day) {
+    const settings = await readSettings();
+    const rolled = rollCondition(before.psyche, day, { canGetSick: settings.canGetSick !== false }, random);
+    await kernel.accept({ id: `dice:${day}`, type: "condition_set", occurredAt: now.getTime(), payload: rolled ? { condition: rolled, diceDay: day } : { diceDay: day } });
+  }
+  const fact = conditionFact(kernel.snapshot(now.getTime()).psyche?.condition, day);
   return fact ? [fact] : [];
 }
 
-/** 调试强制：从今天开始某个事件（`/api/lin/inner/force`）。 */
-export function forceCondition(kind, now = new Date()) {
-  const condition = startCondition(kind, formatLocalDate(now));
-  return mutateInner((current) => ({ state: { ...current, condition }, reason: { kind: "force", condition } }));
+/**
+ * 调试强制：从今天开始某个事件（`/api/lin/inner/force`）；kind=null 表示恢复健康。
+ * @param {{accept: Function}} kernel
+ * @param {string | null} kind
+ * @param {Date} [now]
+ */
+export function forceCondition(kernel, kind, now = new Date()) {
+  const condition = kind ? startCondition(kind, formatLocalDate(now)) : null;
+  return kernel.accept({ id: `force:${now.getTime()}`, type: "condition_set", occurredAt: now.getTime(), payload: { condition } });
 }

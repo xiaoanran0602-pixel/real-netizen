@@ -15,7 +15,7 @@ const HISTORY_LIMIT = 50;
 const SELF_DAILY_KEEP_DAYS = 3;
 
 export async function readProfile() {
-  const profile = await readJson(paths.profile(), { history: [] });
+  const profile = await readJson(paths.momentsProfile(), { history: [] });
   return { ...profile, history: Array.isArray(profile.history) ? profile.history : [] };
 }
 
@@ -32,7 +32,7 @@ export function updateProfile(mutate) {
     const profile = await readProfile();
     mutate(profile);
     profile.history = profile.history.slice(-HISTORY_LIMIT);
-    await writeJsonAtomic(paths.profile(), profile);
+    await writeJsonAtomic(paths.momentsProfile(), profile);
     return profile;
   });
 }

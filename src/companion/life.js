@@ -67,12 +67,12 @@ export async function readLife(now) {
 
 export function formatLife(life, keys) {
   const blocks = [];
-  if (life.year) blocks.push(`今年（${keys.year}）你的大方向：\n${life.year}`);
-  if (life.month) blocks.push(`这个月（${keys.month}）：\n${life.month}`);
-  if (life.week) blocks.push(`这一周（${keys.week}）：\n${life.week}`);
-  if (life.day) blocks.push(`今天（${keys.today} ${keys.weekday}）的日程：\n${life.day}`);
-  if (life.recentDays.length > 0) blocks.push(`前几天你过的日子：\n${life.recentDays.map((day) => `- ${day.date}：${oneLine(day.text)}`).join("\n")}`);
-  if (life.future) blocks.push(`你对以后的想法：\n${life.future}`);
+  if (life.year) blocks.push(`她今年（${keys.year}）的大方向：\n${life.year}`);
+  if (life.month) blocks.push(`她这个月（${keys.month}）：\n${life.month}`);
+  if (life.week) blocks.push(`她这一周（${keys.week}）：\n${life.week}`);
+  if (life.day) blocks.push(`她今天（${keys.today} ${keys.weekday}）的日程：\n${life.day}`);
+  if (life.recentDays.length > 0) blocks.push(`她最近几天：\n${life.recentDays.map((day) => `- ${day.date}：${oneLine(day.text)}`).join("\n")}`);
+  if (life.future) blocks.push(`她对以后的想法：\n${life.future}`);
   return blocks.length > 0 ? blocks.join("\n\n") : null;
 }
 

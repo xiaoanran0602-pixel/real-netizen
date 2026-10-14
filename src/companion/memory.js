@@ -1,5 +1,5 @@
 // ============================================================
-// 她的记忆：读取 data/memory/*.md，按类型分层，相关度挑往事，格式化成「你记得的事」。
+// 她的记忆：读取 data/memory/*.md，按类型分层，相关度挑往事，格式化成「她记得的事」。
 //
 // 记忆文件格式（一条一个 md，frontmatter + 正文）：
 //   ---
@@ -195,13 +195,13 @@ export function formatEntry(entry, withDate, textOverride) {
 export function digestTitles(userName) {
   const name = displayUserName(userName);
   return [
-    ["aboutHim", `关于${name}：`, false],
+    ["aboutHim", `${name}这个人：`, false],
     ["hisPreferences", `${name}的脾气和喜好：`, false],
     ["hisRecent", `${name}最近：`, true],
-    ["openThreads", "你们之前聊过、还没聊完的：", true],
-    ["related", "你想起来的往事：", true],
-    ["aboutMe", "你自己：", false],
-    ["myRecent", "你自己这几天：", true],
+    ["openThreads", "他们之前聊过、还没聊完的：", true],
+    ["related", "她想起来的往事：", true],
+    ["aboutMe", "她自己：", false],
+    ["myRecent", "她自己这几天：", true],
   ];
 }
 

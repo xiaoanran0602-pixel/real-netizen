@@ -85,7 +85,7 @@ export function describeDayPart(hour) {
 
 /** 「多久以前」的口语描述。 @param {number} gap 毫秒 */
 export function describeGap(gap) {
-  if (gap < 10 * MINUTE_MS) return "刚刚，你们还在聊着";
+  if (gap < 10 * MINUTE_MS) return "刚刚，他们还在聊着";
   if (gap < HOUR_MS) return `${Math.round(gap / MINUTE_MS)} 分钟前`;
   if (gap < DAY_MS) return `${Math.round(gap / HOUR_MS)} 小时前`;
   const days = Math.round(gap / DAY_MS);

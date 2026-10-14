@@ -70,15 +70,15 @@ async function run(kind, day, system, user) {
   return { applied, rejected: [...invalid, ...rejected], gists };
 }
 
-const COMMON_RULES = (settings, day) => [
+export const COMMON_RULES = (settings, day) => [
   `你是${settings.companionName}的「记性」，现在是 ${day} 的深夜，她睡着了，你在帮她整理记忆。`,
   "规则：",
   "- 过去日期的 event-、day- 文件和已经过去的周/月是只读的，不要改也不要删。",
-  "- 写成她自己的口吻，自然的中文短句，不要写成数据库条目。",
+  "- 平实地写，不修辞不打比方：写发生了什么，自然的中文短句，不要写成数据库条目。",
   "- 只整理下面给出的记忆，不推测、不编造没出现过的事。",
 ];
 
-const GIST_FORMAT = '另外输出 "gists": {"文件名": "一句话"}，给每条「变模糊的记忆」写一句她现在还记得的样子：只留轮廓，二十字左右，她的口吻。';
+export const GIST_FORMAT = '另外输出 "gists": {"文件名": "一句话"}，给每条「变模糊的记忆」写一句她现在还记得的样子：只留轮廓，二十字左右，平实地写，不修辞不打比方。';
 
 /**
  * 每日整理。
@@ -103,6 +103,11 @@ export async function consolidateDaily(day) {
   return { gistsRequested: needGist.length, batches: results.length };
 }
 
+/** 周总结任务那一行。continued：同一周分批写时，后面的批次在原来基础上补充。 */
+export function weekSummaryTask(weekKey, continued) {
+  return `1. 写 week-summary-${weekKey}.md（type: event）：这一周他们之间、她自己过得怎么样，几句话，平实地写，不修辞不打比方。${continued ? "已经写过的话就在原来的基础上补充。" : ""}`;
+}
+
 /**
  * 每周整理（day 是周日；整理这一周周一到周日）。
  * @param {string} day
@@ -121,7 +126,7 @@ export async function consolidateWeekly(day) {
       ...COMMON_RULES(settings, day),
       "",
       "任务：",
-      `1. 写 week-summary-${weekKey}.md（type: event）：这一周你们之间、她自己过得怎么样，几句话，她的口吻。${start > 0 ? "已经写过的话就在原来的基础上补充。" : ""}`,
+      weekSummaryTask(weekKey, start > 0),
       `2. 这一周里反复出现的事如果说明了${settings.userName}新的长期特点或喜好，写进 profile / preference（改已有的或新建）。`,
       "3. 合并重复的记忆（write 一条 + delete 其余，不能动过去的 event）。",
       "",

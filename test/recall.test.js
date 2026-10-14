@@ -43,7 +43,7 @@ test("foundation never sinks; budget truncates and foundation layer keeps priori
   const memories = [m("p.md", "profile", "他在做动画，住上海"), ...Array.from({ length: 40 }, (_, i) => m(`e${i}.md`, "event", `${long}${i}`, { updated: `2026-10-0${(i % 9) + 1}` }))];
   const table = { "p.md": rec(1, "2020-01-01", { importance: "core", gist: "他好像在做动画" }) };
   const { text } = selectMemories({ memories, table, today, recentText: "很长的一段关于他的事", userName: "阿澄", budget: 1200 });
-  assert.match(text, /关于阿澄：\n- 他好像在做动画/u);
+  assert.match(text, /阿澄这个人：\n- 他好像在做动画/u);
   assert.ok(text.length < 1500, `text length ${text.length}`);
 });
 
@@ -131,4 +131,25 @@ test("她自己复述不强化；用户当前消息第二行提到的事仍正�
   } finally {
     await cleanup();
   }
+});
+
+test("身体与通勤不从基础档案或置顶绕过门控；模糊承接只接最近一个问题", () => {
+  const memories = [m("health.md", "profile", "他昨天感冒头疼", { description: "他的身体和头疼" }), m("commute.md", "recent", "感冒时坐公交，不骑自行车", { description: "最近坐公交上下班", expires: "2026-10-20" })];
+  const input = { memories, table: { "commute.md": rec(30, today, { pinned: true }) }, today, userName: "阿澄" };
+  assert.equal(selectMemories({ ...input, recentText: "早，" }).text, null);
+  assert.equal(selectMemories({ ...input, recentText: "天气凉了不好起床" }).text, null);
+  const answer = selectMemories({ ...input, recentText: "好多了", previousAssistantText: "今天头还疼吗？" });
+  assert.match(answer.text, /头疼/u);
+  assert.doesNotMatch(answer.text, /公交/u);
+  assert.equal(selectMemories({ ...input, recentText: "不聊这个了", previousAssistantText: "今天头还疼吗？" }).text, null);
+  assert.match(selectMemories({ ...input, recentText: "今天继续坐公交" }).text, /公交/u);
+});
+
+test("聊头疼不解锁所有健康档案，也不把拒绝聊健康当成健康线索", () => {
+  const memories = [m("head.md", "recent", "昨天感冒头疼", { description: "昨天感冒头疼" }), m("liver.md", "profile", "去年复查肝功能", { description: "以前的肝功能复查" })];
+  const input = { memories, table: {}, today, userName: "阿澄" };
+  const text = selectMemories({ ...input, recentText: "今天头疼好多了" }).text;
+  assert.match(text, /头疼/u);
+  assert.doesNotMatch(text, /肝功能/u);
+  assert.equal(selectMemories({ ...input, recentText: "别再问我头疼了" }).text, null);
 });

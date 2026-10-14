@@ -4,6 +4,8 @@
 
 > 一个活在你电脑里的 AI 聊天伙伴。零第三方依赖，数据全在本地，写好人设她就开口说话。
 
+> 🆕 **v0.2.0**：合并两套内心引擎为一副身体，新增「情境与语域」（她终于有「此刻」）和确定性话轮规划。[查看更新日志](./CHANGELOG.md#v020---2026-10-14--一副身体三种时间尺度她终于有此刻)。
+
 [![CI](https://github.com/xiaoanran0602-pixel/real-netizen/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaoanran0602-pixel/real-netizen/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
@@ -11,7 +13,7 @@
 
 - **网页聊天**：免构建单页网页，SSE 流式输出，打开浏览器就能聊。界面适配手机，同一局域网可访问。
 - **记得你**：多层记忆系统（召回、清晰度、强度、日 / 周 / 月整理），她会记住你说过的事，并按重要程度决定提起还是沉底。过去不可改、今天只追加、未来可变。
-- **有内心**：四维内核 + 念头池，她有情绪起伏、日程、会主动想你。可选的内心模式（观察 / 身体式），曲线在「设置 → 高级 → 她的内心」可看。
+- **有内心**：合并后的身体内核（愉悦 / 激活 / 精力 / 张力，慢层自我感觉、写书与被看见）+ 念头池，她有情绪起伏、日程、会主动想你。状态曲线在「设置 → 高级 → 她的内心」可看。
 - **会主动**：朋友圈、换头像签名、主动发消息，用内置的生图模型配图。不是定时任务，是随机间隔加事件触发，大多数时候什么都不做。
 - **多渠道**：Telegram 开箱即用（长轮询，无需公网地址），Webhook 渠道可接 QQ / 微信 / 飞书 / Discord / LINE / Slack 等任意平台，只回复你一个人。
 - **你的数据你做主**：所有数据在本地 `data/`，不上传任何云。换电脑拷走整个目录即可。
@@ -28,7 +30,7 @@ node src/main.js
 启动后终端会打印带令牌的链接，按住 Ctrl 点击打开网页。然后：
 
 1. **设置 → 模型**：填接口地址和 API Key（OpenAI / Anthropic / DeepSeek / OpenRouter / Ollama 都行）。
-2. **设置 → 人设**：写她是谁。可从 [`examples/persona.md`](./examples/persona.md) 起步。
+2. **设置 → 人设**：写她是谁。可从 [`examples/persona.md`](./examples/persona.md) 起步；聊天提示词用的平实人设见 [`examples/profile.example.md`](./examples/profile.example.md)。
 3. **（可选）设置 → 聊天渠道**：接 Telegram 等，让她在聊天软件里陪你。
 4. **（可选）后台常驻**：Windows 用 `lin.ps1 -Install` 注册计划任务。
 

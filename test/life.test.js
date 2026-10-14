@@ -50,7 +50,7 @@ test("write only missing files; never overwrite existing", async () => {
     await writeFile(lifePath("day-2026-10-09.md"), "昨天\n去天文台");
     const life = await readLife(now);
     assert.equal(life.recentDays[0].date, "2026-10-09");
-    assert.match(formatLife(life, lifeKeys(now)), /前几天你过的日子：\n- 2026-10-09：昨天 去天文台/u);
+    assert.match(formatLife(life, lifeKeys(now)), /她最近几天：\n- 2026-10-09：昨天 去天文台/u);
   } finally {
     await cleanup();
   }

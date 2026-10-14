@@ -31,6 +31,8 @@ export function dataPath(...segments) {
 export const paths = {
   settings: () => dataPath("settings.json"),
   persona: () => dataPath("persona.md"),
+  /** 聊天提示词用的平实人设（事实清单，第三人称）。persona.md 是完整角色文档，给朋友圈、日程等用。 */
+  profile: () => dataPath("profile.md"),
   core: () => dataPath("core.md"),
   coreSelf: () => dataPath("core-self.md"),
   state: () => dataPath("state.json"),
@@ -40,15 +42,20 @@ export const paths = {
   life: () => dataPath("memory", "life"),
   strength: () => dataPath("memory", ".strength.json"),
   moments: () => dataPath("moments.json"),
-  profile: () => dataPath("profile.json"),
+  /** 她的头像、签名（朋友圈那边的资料）。 */
+  momentsProfile: () => dataPath("profile.json"),
   world: () => dataPath("world.json"),
   mediaLibrary: () => dataPath("media-library.json"),
   inner: () => dataPath("inner.json"),
   innerLog: () => dataPath("inner-log.jsonl"),
+  /** 合并内心引擎时旧 inner.json 的备份（只写一次，回滚靠它）。 */
+  innerLegacyBackup: () => dataPath("inner.legacy-backup.json"),
   thoughts: () => dataPath("thoughts.jsonl"),
   thoughtsMeta: () => dataPath("thoughts-state.json"),
   kernelLog: () => dataPath("kernel-log.jsonl"),
   pendingReplies: () => dataPath("pending-replies.json"),
+  /** 这段聊天聊到了什么份上（docs/19）。眼下的事，不进回档范围。 */
+  conversationState: () => dataPath("conversation-state.json"),
   media: () => dataPath("media"),
   archive: () => dataPath("archive"),
   archiveObjects: () => dataPath("archive", "objects"),
@@ -63,7 +70,7 @@ export const paths = {
 /**
  * 回档范围（「她的经历」）：存档与恢复共用。相对 data 目录，目录会递归。
  * state.json 不在这里：它只恢复下面 EXPERIENCE_STATE_KEYS 里的键，单独处理。
- * 不在范围内：settings、persona、core、world、secrets、logs、pending-replies、archive 本身。
+ * 不在范围内：settings、persona、core、world、secrets、logs、pending-replies、conversation-state、archive 本身。
  */
 export const EXPERIENCE_PATHS = Object.freeze([
   "conversations",

@@ -23,23 +23,23 @@ export function formatWorldText({ world, profile, moments, userName }) {
   if (weather) {
     const range = weather.todayMin !== undefined && weather.todayMax !== undefined ? `，今天 ${weather.todayMin}–${weather.todayMax}°C` : "";
     const tomorrow = weather.tomorrowDescription ? `，明天${weather.tomorrowDescription}` : "";
-    lines.push(`你所在的${weather.city}：${weather.description}，${weather.temperature}°C${range}${tomorrow}。`);
+    lines.push(`她所在的${weather.city}：${weather.description}，${weather.temperature}°C${range}${tomorrow}。`);
   }
-  if (profile?.currentCity) lines.push(`你这几天不在家，人在${profile.currentCity}。`);
-  if (profile?.signature?.text) lines.push(`你现在的个性签名：${profile.signature.text}`);
-  if (profile?.avatar?.query) lines.push(`你现在的头像：${profile.avatar.query}。`);
+  if (profile?.currentCity) lines.push(`她这几天不在家，人在${profile.currentCity}。`);
+  if (profile?.signature?.text) lines.push(`她现在的个性签名：${profile.signature.text}`);
+  if (profile?.avatar?.query) lines.push(`她现在的头像：${profile.avatar.query}。`);
   const posts = (Array.isArray(moments?.posts) ? moments.posts : []).slice(0, RECENT_POST_LIMIT);
   if (posts.length > 0) {
-    lines.push("你最近发的朋友圈：");
+    lines.push("她最近发的朋友圈：");
     for (const post of posts) {
       const liked = post.likes?.includes("me") ? `，${name}点了赞` : "";
-      const comments = (post.comments ?? []).map((comment) => `${comment.from === "me" ? name : "你"}：${comment.text}`).join(" / ");
+      const comments = (post.comments ?? []).map((comment) => `${comment.from === "me" ? name : "她"}：${comment.text}`).join(" / ");
       const when = new Date(post.at).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
       lines.push(`- ${when}「${String(post.text ?? "").slice(0, POST_CHAR_LIMIT)}」${post.images?.length ? `（配了张照片${post.imageCaption ? `：${post.imageCaption}` : ""}）` : ""}${liked}${comments ? `；评论：${comments}` : ""}`);
     }
   }
   const news = (Array.isArray(world?.news) ? world.news : []).slice(0, NEWS_LIMIT);
-  if (news.length > 0) lines.push(`今天刷到的新闻（大多和你无关，聊到了才提）：${news.join("；")}`);
+  if (news.length > 0) lines.push(`她今天刷到的新闻：${news.join("；")}`);
   return lines.length > 0 ? lines.join("\n") : null;
 }
 
@@ -47,7 +47,7 @@ export function formatWorldText({ world, profile, moments, userName }) {
 export async function buildWorldText(userName) {
   const [world, profile, moments] = await Promise.all([
     readJson(paths.world(), {}),
-    readJson(paths.profile(), {}),
+    readJson(paths.momentsProfile(), {}),
     readJson(paths.moments(), {}),
   ]);
   return formatWorldText({ world, profile, moments, userName });

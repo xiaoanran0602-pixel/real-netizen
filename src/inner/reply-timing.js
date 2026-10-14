@@ -115,10 +115,10 @@ export function createReplyTiming(deps) {
     const job = pending;
     pending = null;
     await persist();
-    const extraNow = job.asleep ? [`他在你睡着的时候给你发了消息（${formatHM(new Date(job.firstAt))} 发的），你刚醒，先回他。`] : [];
+    const extraNow = job.asleep ? [`他在她睡着的时候发来了消息（${formatHM(new Date(job.firstAt))} 发的），她刚醒。`] : [];
     // 忙完了回他（docs/13 第 9.2 节）：回来接队列里那条，不新开话题。
-    if (job.busyReturn) extraNow.push(`你刚忙完。他在 ${formatHM(new Date(job.firstAt))} 给你发了消息，回来接着他那句说，不要另开话题。`);
-    if (job.maxChars) extraNow.push(`你这会儿还在忙，只能回一句，不超过 ${job.maxChars} 个字。`);
+    if (job.busyReturn) extraNow.push(`她刚忙完。他是 ${formatHM(new Date(job.firstAt))} 发来的，她回来接着他那句。`);
+    if (job.maxChars) extraNow.push(`她这会儿还在忙，只来得及回一句，不超过 ${job.maxChars} 个字。`);
     const result = await deps.chatService.regenerate({ source: "channel", deferReply: true, extraNow });
     // 生成期间他又发了消息：这份作废，等新的那一批。
     if (pending) return;

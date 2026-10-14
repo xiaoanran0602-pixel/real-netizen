@@ -43,7 +43,8 @@ test("anthropic: headers, adaptive thinking, system split with cache_control, fi
     assert.equal(request.body.model, "chat-m");
     assert.deepEqual(request.body.thinking, { type: "adaptive" });
     assert.deepEqual(request.body.output_config, { effort: "low" });
-    assert.equal(request.body.max_tokens, 2048);
+    // 正文上限 2048 + low 档思考余量 2048。
+    assert.equal(request.body.max_tokens, 4096);
     assert.deepEqual(request.body.system, [
       { type: "text", text: "人设", cache_control: { type: "ephemeral" } },
       { type: "text", text: "现在" },
@@ -154,7 +155,8 @@ test("testModels reports each role separately", async () => {
     assert.equal(result.background.ok, false);
     assert.equal(result.background.error.kind, "http");
     assert.equal(result.background.error.status, 401);
-    assert.equal(fake.requests[0].body.max_tokens, 32);
+    // 测试正文 32 + off 档余量 1024（关不掉思考的模型也不会被截成空）。
+    assert.equal(fake.requests[0].body.max_tokens, 1056);
   } finally {
     await fake.close();
     await cleanup();

@@ -10,7 +10,8 @@
 // 本文件不读盘、不调模型、不联网（docs/14 第 7.1 节：心跳只做算术）。
 // ============================================================
 
-import { HOUR_MS, MINUTE_MS } from "../util/time.js";
+import { formatLocalDate, HOUR_MS, MINUTE_MS } from "../util/time.js";
+import { initialPsyche } from "./psyche.js";
 
 /** 计算网格（毫秒）。调度频率可以改，网格不改（docs/14 第 7.2 节）。 */
 export const GRID_MS = 5_000;
@@ -28,7 +29,7 @@ const INITIAL = Object.freeze({ valence: 8, activation: 25, energy: 70, tension:
 
 /** 参数集中在一个版本化对象里；模型不能改它（docs/14 第 3.1、13 节）。 */
 export const BODY_PARAMS = Object.freeze({
-  version: "body-v1",
+  version: "body-v2",
   initial: INITIAL,
   halfLifeMin: HALF_LIFE_MIN,
   gridMs: GRID_MS,
@@ -53,14 +54,18 @@ export const BODY_PARAMS = Object.freeze({
   }),
   /** 天气偏好：默认全 0，不默认「阴天必然难过」（docs/14 第 4.3 节）。 */
   weatherPreference: Object.freeze({ clear: 2, cloudy: 0, overcast: -1, rain: -2, snow: -1, fog: -1, wind: 0, storm: -3 }),
-  /** 表现档位的进入/退出阈值（滞回，docs/14 第 9.2 节）。 */
+  /** 表现档位的进入/退出阈值（滞回，docs/14 第 9.2 节；merge-inner-engines design §6）。 */
   bands: Object.freeze({
-    lowEnergy: [30, 40],
+    tired: [55, 60],
+    exhausted: [25, 30],
+    hungry: [30, 35],
     highActivation: [65, 55],
     highTension: [65, 55],
     relaxedValence: [20, 15],
     subduedValence: [-20, -15],
   }),
+  /** 饥饿：饱腹低于 30 时按程度把愉悦目标最多下调 6、张力目标最多上调 6。 */
+  hunger: Object.freeze({ from: 30, valence: 6, tension: 6 }),
   heart: Object.freeze({ base: 58, activation: 0.35, tension: 0.1, physical: 35, asleep: 6, min: 48, max: 130 }),
 });
 
@@ -71,14 +76,18 @@ export function paramTag(tag) {
   return BODY_PARAMS.tags[tag] ?? { load: 0.25, recovery: 0, physical: 0.1 };
 }
 
-/** 新内核的初始状态。E/T 可以从旧版迁移（docs/14 第 10.2 节）。 */
+/**
+ * 内核的初始状态。E/T 可以从旧版迁移（docs/14 第 10.2 节）；psyche 是慢层（merge-inner-engines design §2）。
+ * @param {number} atMs
+ * @param {{energy?: number, tension?: number, activation?: number, valence?: number, psyche?: any}} [seed]
+ */
 export function createBody(atMs, seed = {}) {
   const energy = Number.isFinite(seed.energy) ? clamp(seed.energy, 0, 100) : INITIAL.energy;
   const tension = Number.isFinite(seed.tension) ? clamp(seed.tension, 0, 100) : INITIAL.tension;
   const activation = Number.isFinite(seed.activation) ? clamp(seed.activation, 0, 100) : clamp(25 + 0.3 * (tension - 30), 0, 100);
   const valence = Number.isFinite(seed.valence) ? clamp(seed.valence, ...VALENCE_RANGE) : INITIAL.valence;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     paramsVersion: BODY_PARAMS.version,
     at: atMs,
     values: { valence, activation, energy, tension },
@@ -89,46 +98,56 @@ export function createBody(atMs, seed = {}) {
     dedup: [],
     impulseWindow: [],
     bands: bandsOf({ valence, activation, energy, tension }, {}),
+    psyche: seed.psyche ?? initialPsyche({ day: formatLocalDate(new Date(atMs)) }),
   };
 }
 
 /**
  * 目标与速率（docs/14 第 5.1 节）。全部用同一份 values 计算。
+ * 合并引擎加了两项中层修正：生病/加班周/假期的消耗倍率与精力上限（condition），饥饿（hunger ∈ [0,1]）。
  * @param {{valence: number, activation: number, energy: number, tension: number}} values
- * @param {{load: number, recovery: number, physical: number, interest: number, asleep: boolean, weather: number, thoughtLoad: number, expectedLoad: number}} input
+ * @param {{load: number, recovery: number, physical: number, interest: number, asleep: boolean, weather: number, thoughtLoad: number, expectedLoad: number, condition?: {drain?: number, energyCap?: number} | null, hunger?: number}} input
  */
 export function targetsOf(values, input) {
   const { load: L = 0, recovery: R = 0, physical: P = 0, interest: I = 0 } = input;
-  const { valence: V, activation: A, energy: E, tension: T } = values;
+  const { activation: A, energy: E, tension: T } = values;
+  const energyCap = clamp(input.condition?.energyCap ?? 100, 0, 100);
+  const H = clamp(input.hunger ?? 0, 0, 1);
+  const hungerV = BODY_PARAMS.hunger.valence * H;
+  const hungerT = BODY_PARAMS.hunger.tension * H;
   if (input.asleep) {
-    const tensionTarget = clamp(6 + 6 * (input.thoughtLoad ?? 0), 0, 100);
+    const tensionTarget = clamp(6 + 6 * (input.thoughtLoad ?? 0) + hungerT, 0, 100);
     const activationTarget = clamp(8 + 0.1 * T, 0, 100);
-    const valenceTarget = clamp(8 + (input.weather ?? 0) + 5 * I - 0.25 * Math.max(0, tensionTarget - 15), ...VALENCE_RANGE);
+    const valenceTarget = clamp(8 + (input.weather ?? 0) + 5 * I - 0.25 * Math.max(0, tensionTarget - 15) - hungerV, ...VALENCE_RANGE);
     return {
       tension: tensionTarget,
       activation: activationTarget,
       valence: valenceTarget,
       energyRatePerHour: 12 * (1 - (0.4 * A) / 100),
+      energyCap,
     };
   }
   const D = clamp((40 - E) / 40, 0, 1);
   const U = clamp(input.thoughtLoad ?? 0, 0, 1);
   const F = clamp(input.expectedLoad ?? 0, 0, 1);
-  const tensionTarget = clamp(10 + 25 * L + 18 * U + 8 * F + 8 * D, 0, 100);
+  const tensionTarget = clamp(10 + 25 * L + 18 * U + 8 * F + 8 * D + hungerT, 0, 100);
   const activationTarget = clamp(22 + 28 * L + 32 * P + 10 * F + 0.15 * T - 8 * (1 - E / 100), 0, 100);
-  const valenceTarget = clamp(8 + (input.weather ?? 0) + 5 * I - 0.25 * Math.max(0, T - 15) - 0.1 * Math.max(0, 40 - E), ...VALENCE_RANGE);
-  const energyRatePerHour = clamp(E_MAX_RATE_UP * R - 2 - 4 * L - 4 * P - 2 * Math.max(0, (A - 50) / 50), -30, 30);
-  return { tension: tensionTarget, activation: activationTarget, valence: valenceTarget, energyRatePerHour };
+  const valenceTarget = clamp(8 + (input.weather ?? 0) + 5 * I - 0.25 * Math.max(0, T - 15) - 0.1 * Math.max(0, 40 - E) - hungerV, ...VALENCE_RANGE);
+  let energyRatePerHour = clamp(E_MAX_RATE_UP * R - 2 - 4 * L - 4 * P - 2 * Math.max(0, (A - 50) / 50), -30, 30);
+  // 清醒时的消耗：感冒、加班周 ×1.3，假期 ×0.8；恢复不受影响。
+  if (energyRatePerHour < 0) energyRatePerHour *= input.condition?.drain ?? 1;
+  return { tension: tensionTarget, activation: activationTarget, valence: valenceTarget, energyRatePerHour, energyCap };
 }
 
-/** 目标不变时推进一小段（docs/14 第 5.2 节）：差值按半衰期减半，精力按速率线性。 */
+/** 目标不变时推进一小段（docs/14 第 5.2 节）：差值按半衰期减半，精力按速率线性，并夹在精力上限以下。 */
 export function stepWithTargets(values, targets, minutes, halfLifeMin = BODY_PARAMS.halfLifeMin) {
   const decay = (value, target, halfLife) => (halfLife > 0 ? target + (value - target) * 2 ** (-minutes / halfLife) : target);
+  const cap = clamp(targets.energyCap ?? 100, 0, 100);
   return {
     valence: clamp(decay(values.valence, targets.valence, halfLifeMin.V), ...VALENCE_RANGE),
     activation: clamp(decay(values.activation, targets.activation, halfLifeMin.A), 0, 100),
     tension: clamp(decay(values.tension, targets.tension, halfLifeMin.T), 0, 100),
-    energy: clamp(values.energy + (targets.energyRatePerHour * minutes) / 60, 0, 100),
+    energy: clamp(values.energy + (targets.energyRatePerHour * minutes) / 60, 0, cap),
   };
 }
 
@@ -140,12 +159,17 @@ export function heartRate(values, { asleep = false, physical = 0 } = {}) {
 
 /**
  * 档位（带滞回，docs/14 第 9.2 节）。读的时候只投影副本，不改权威档位。
+ * tired / exhausted 看精力（低于进入值进入、高于退出值退出），hungry 看派生饱腹（不传就不变）。
  * @param {{valence: number, activation: number, energy: number, tension: number}} values
  * @param {any} previous 上一次的档位
+ * @param {{fullness?: number}} [derived]
  */
-export function bandsOf(values, previous = {}) {
+export function bandsOf(values, previous = {}, derived = {}) {
   const B = BODY_PARAMS.bands;
-  const lowEnergy = values.energy < B.lowEnergy[0] ? true : values.energy > B.lowEnergy[1] ? false : Boolean(previous?.lowEnergy);
+  const low = (value, [enter, exit], was) => (value < enter ? true : value > exit ? false : Boolean(was));
+  const tired = low(values.energy, B.tired, previous?.tired);
+  const exhausted = low(values.energy, B.exhausted, previous?.exhausted);
+  const hungry = Number.isFinite(derived?.fullness) ? low(derived.fullness, B.hungry, previous?.hungry) : Boolean(previous?.hungry);
   const highActivation = values.activation > B.highActivation[0] ? true : values.activation < B.highActivation[1] ? false : Boolean(previous?.highActivation);
   const highTension = values.tension > B.highTension[0] ? true : values.tension < B.highTension[1] ? false : Boolean(previous?.highTension);
   let valence = previous?.valence ?? "neutral";
@@ -153,7 +177,7 @@ export function bandsOf(values, previous = {}) {
   else if (values.valence < B.subduedValence[0]) valence = "subdued";
   else if (valence === "relaxed" && values.valence < B.relaxedValence[1]) valence = "neutral";
   else if (valence === "subdued" && values.valence > B.subduedValence[1]) valence = "neutral";
-  return { lowEnergy, highActivation, highTension, valence };
+  return { tired, exhausted, hungry, highActivation, highTension, valence };
 }
 
 /**

@@ -44,7 +44,7 @@ flowchart TB
 | `src/model/` | 两种协议的请求体与流解析；推理强度映射与 400 回退；后台失败退回聊天模型 |
 | `src/chat/` | `chat-service.js` 是对话唯一写入者：网页、渠道、主动消息、日结、回档全走同一条队列 |
 | `src/companion/` | 人设与基石、提示词、记忆（读、召回、强度、整理、日结）、日程、写入守卫 |
-| `src/inner/` | 旧版体征与张力（`vitals.js`、`mapping.js`、`store.js`）、不秒回、掷骰、意志、基石（`core-self.js`）；念头池（`thoughts.js` 纯函数、`thought-store.js` 读写与模型、`thought-context.js` 出口、`thoughts-runtime.js` 后台、`promises.js` 时间承诺）；四维内核（`body.js` 方程、`body-drivers.js` 输入、`body-advance.js` 推进、`kernel.js` 事件与检查点、`heartbeat.js` 心跳与映射）；`provider.js` 按模式拼进提示词 |
+| `src/inner/` | 合并后的身体：慢层自我感觉 / 写书 / 被看见（`psyche.js`）、事件与检查点（`kernel.js`）、5 秒心跳（`heartbeat.js`）、体征方程与推进（`body.js` / `body-advance.js` / `body-drivers.js`）；派生读数（`derive.js` 想念 / 饱腹 / 防线，不存储）；唯一表达出口（`express.js` 状态提示、段数上限、回复延迟、主动放行、念头注意预算）；兼容视图（`state.js` 从内核快照读）；掷骰（`dice.js`）、意志（`will.js`）、基石（`core-self.js`）；念头池（`thoughts.js` 纯函数、`thought-store.js` 读写与模型、`thought-context.js` 出口、`thoughts-runtime.js` 后台、`promises.js` 时间承诺）；`provider.js` 拼进提示词；情境与语域（`situation.js` / `conversation.js` / `perturbation.js`） |
 | `src/moments/` | 朋友圈、头像签名、主动消息；天气新闻；生图（`images.js`） |
 | `src/channels/` | 渠道契约（`types.js`）、内置渠道表（`registry.js`）、合批桥（`bridge.js`）、Telegram 长轮询（`telegram/`）、Webhook 签名与回调（`webhook/`） |
 | `src/archive/` + `src/clock/` | 存档、回档、日结时钟 |
@@ -67,7 +67,7 @@ flowchart TB
 | `memory/.strength.json` | `companion/strength.js` | 记忆强度 |
 | `media-library.json` | `companion/media-runtime.js` | 推荐队列、来源证据、模拟消费进度；参与回档 |
 | `moments.json`、`profile.json`、`media/` | `moments/store.js` | |
-| `inner.json`、`inner-log.jsonl` | `inner/store.js`；`body` 子树只由 `inner/kernel.js` 写 | 旧版体征与变化原因；新内核的检查点 |
+| `inner.json` | `inner/store.js`；`body` 子树只由 `inner/kernel.js` 写 | 合并后唯一的内核状态；首次启动从 v1 自动迁移到 `body-v2` 并备份 `inner.legacy-backup.json` |
 | `kernel-log.jsonl` | 只有 `inner/kernel.js` | 新内核的事件（seq、去重、epoch），重启时重放 |
 | `thoughts.jsonl`、`thoughts-state.json` | 只有 `inner/thought-store.js` | 念头池（同 id 后写覆盖）与 busy_until |
 | `pending-replies.json` | `inner/reply-timing.js` | 渠道待回复，重启后继续，回档清空 |
@@ -85,7 +85,7 @@ Get-Content data\logs\watchdog.log -Tail 20
 node src/main.js --port 3031 --data <数据副本> --dry   # 用副本试：不发渠道消息、不跑后台
 ```
 
-- 网页「设置 → 高级」：对话 ID、数据目录、她的内心（体征、张力、防线、当前时段、给她的提示、下一条待回复）。
+- 网页「设置 → 高级」：对话 ID、数据目录、她的内心（四维状态、想念 / 饱腹 / 防线、当前时段与处境、聊天状态、给她的提示、下一条待回复）。
 - `GET /api/lin/inner`、`POST /api/lin/inner/simulate?hours=N[&memory=1]`、`POST /api/lin/inner/force {event}`（`sick` `overtime` `vacation` `healthy` `tension:book` `tension:seen` `stress` `tired` `drink`）。调用要带令牌（`Authorization: Bearer <data/secrets/access-token.txt>`）。
 - 渠道没反应：看 `server.log` 里 `[lin:channels]`、`[lin:telegram]`、`[lin:webhook]`；webhook 的 `signature rejected` 是签名或时间戳不对；Telegram 机器人先用 `@BotFather` 的 `/token` 和 Chat ID 确认（见 [`channels.md`](./channels.md)）。
 
@@ -123,5 +123,5 @@ node src/main.js --port 3031 --data <数据副本> --dry   # 用副本试：不�
 - 用户连发几条时攒 2.5 秒合成一轮（`channels/bridge.js` 的 `BATCH_WINDOW_MS`），偶尔会误解成串话。
 - 渠道发来的图片只转成「[他发了一张图片]」，可以下载后交给模型看。
 - 电脑 IP 变动要手动改 Webhook 回调地址（或改用 Telegram 长轮询，不用公网回调）。
-- 新内核默认 `shadow`（只观察）。先看几天「高级 → 她的内心」的曲线，再在设置里切到 `body`；两套数值不会同时控制回复。细节见 [`body-kernel.md`](./body-kernel.md)。
+- 两套内心引擎已在 v0.2.0 合并为一副身体：`vitals.js`、`settle/settleNow` 与 `innerEngineMode` 切换开关全部移除，表达出口唯一。内核迁移与数据格式见 [`data-and-migration.md`](./data-and-migration.md)，身体规格见 [`body-kernel.md`](./body-kernel.md)（其中 `shadow`/`body` 模式与施工记录为合并前的设计，已不再适用）。
 - 网页没有「以前的对话」列表（开始新对话后旧对话文件还在 `data/conversations/`，只是看不到）。

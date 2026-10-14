@@ -13,10 +13,22 @@ import { readState, updateState } from "../store/state.js";
 import { createLogger } from "../util/log.js";
 import { buildModelMessages } from "./history.js";
 import { createTaskQueue } from "./queue.js";
+import { generatePlannedReply, reviewPlannedReply } from "../companion/reply-plan.js";
 
 const log = createLogger("chat");
 const HUMAN_SOURCES = new Set(["web", "channel"]);
 export const TEXT_MAX_CHARS = 4000;
+
+/**
+ * 补全写法下模型偶尔会把「林澈：」也打出来；回复开头是她的名字加冒号就去掉。
+ * @param {string} text
+ * @param {string} [name]
+ */
+export function stripSpeakerPrefix(text, name) {
+  const trimmed = String(text ?? "").trim();
+  const names = [...new Set([name, "林澈"].filter((value) => value?.trim()))].map((value) => value.trim().replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"));
+  return trimmed.replace(new RegExp(`^(?:${names.join("|")})\\s*[：:]\\s*`, "u"), "").trim();
+}
 
 /**
  * @param {{
@@ -82,13 +94,14 @@ export function createChatService(deps) {
       await deps.ensureLife?.(turnNow).catch((error) => log.warn("ensure life failed", { error: error?.message }));
       const messages = await readConversation(conv.id);
       // 修复：重新生成时（渠道占位之后），历史最后是她的占位话；以她的话结尾会被当成续写前缀。
-      // 去掉最后一条他的话之后的她的话，改成在「现在」里告诉她已经先回过什么。
+      // 去掉最后一条他的话之后的她的话，改成在「此刻」里写明她已经先回过什么（第三人称事实）。
       const lastUserIndex = messages.findLastIndex((m) => m.role === "user");
       const trailing = input.text === undefined && lastUserIndex >= 0 ? messages.slice(lastUserIndex + 1).filter((m) => m.role === "assistant") : [];
       const history = trailing.length > 0 ? messages.slice(0, lastUserIndex + 1) : messages;
-      const extraNow = [...(input.extraNow ?? []), ...(trailing.length > 0 ? [`你刚才已经先回了他一句：「${trailing.map((m) => m.text).join(" ")}」，现在有空了，接着好好回他。`] : [])];
+      const extraNow = [...(input.extraNow ?? []), ...(trailing.length > 0 ? [`她刚才已经先回了一句：「${trailing.map((m) => m.text).join(" ")}」，现在有空了。`] : [])];
       const prompt = await deps.buildPrompt({ now: turnNow, lastSeenAt, messages: history, extraNow, source: input.source });
-      const reply = (
+      const planned = prompt.replyPlan ? await generatePlannedReply({ complete: deps.complete, plan: prompt.replyPlan, system: prompt.system, messages: buildModelMessages(history, { flattenAssistant: true }), signal, normalize: (text) => stripSpeakerPrefix(text, settings.companionName), review: deps.reviewReply ?? reviewPlannedReply }) : null;
+      const reply = planned ? planned.reply : stripSpeakerPrefix(
         await deps.complete({
           role: "chat",
           system: prompt.system,
@@ -96,8 +109,12 @@ export function createChatService(deps) {
           stream: !input.deferReply,
           signal,
           onDelta: stream ? (text) => broadcast("delta", { text }) : undefined,
-        })
-      ).trim();
+        }),
+        settings.companionName,
+      );
+      if (planned && stream) broadcast("delta", { text: reply });
+      if (planned?.violations.length) log.warn("reply budget missed", { violations: planned.violations, need: prompt.replyPlan.need });
+      if (planned && prompt.replyPlan.need !== "safety" && !planned.semanticChecked) log.info("reply semantic review unavailable", { need: prompt.replyPlan.need });
       if (signal.aborted) throw Object.assign(new Error("aborted"), { kind: "aborted" });
       let assistant = null;
       if (!input.deferReply) {
@@ -108,7 +125,7 @@ export function createChatService(deps) {
       }
       await prompt.afterTurn?.(reply).catch((error) => log.warn("afterTurn failed", { error: error?.message }));
       deps.afterTurn?.({ source: input.source, reply });
-      return { ok: true, userMessage, reply, assistant, maxSegments: prompt.maxSegments };
+      return { ok: true, userMessage, reply, assistant, maxSegments: prompt.maxSegments, replyPlan: prompt.replyPlan, replyCheck: planned ? { rewritten: planned.rewritten, violations: planned.violations, semanticChecked: planned.semanticChecked } : undefined };
     } catch (error) {
       if (replyTo) failed.add(replyTo);
       if (!input.deferReply) {

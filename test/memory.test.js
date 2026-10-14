@@ -82,8 +82,8 @@ test("digest layers: open threads, self_daily keeps 3 days, latest events fill i
   assert.deepEqual(digest.myRecent.map((e) => e.file), ["d-new.md"]);
   assert.deepEqual(digest.related.map((e) => e.file), ["e1.md"]);
   const text = formatMemoryDigest(digest, "阿澄");
-  assert.match(text, /你们之前聊过、还没聊完的：\n- 他答应讲完那个故事/u);
-  assert.match(text, /你想起来的往事：\n- （2026-10-09）聊了仙女座/u);
+  assert.match(text, /他们之前聊过、还没聊完的：\n- 他答应讲完那个故事/u);
+  assert.match(text, /她想起来的往事：\n- （2026-10-09）聊了仙女座/u);
 });
 
 test("readMemories reads data/memory, skips broken files and MEMORY.md", async () => {
